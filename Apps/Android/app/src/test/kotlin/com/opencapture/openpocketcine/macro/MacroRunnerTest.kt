@@ -25,6 +25,10 @@ private class FakeCamera(initial: MacroCameraState) : MacroCamera {
     var ignore: (MacroStep) -> Boolean = { false }
     /** Optional side effect after a write lands, e.g. recording starts. */
     var after: (MacroStep) -> Unit = {}
+    /** What the read-back GET returns; false mimics the session skipping it. */
+    var refreshResult = true
+
+    override suspend fun refreshIsoCeiling() = refreshResult
 
     override fun send(step: MacroStep) {
         sent += step
@@ -106,12 +110,16 @@ class MacroRunnerTest {
     }
 
     @Test
-    fun isoCeilingRefusedInDLog2() = runTest {
-        val bad = MacroPreset("錯誤", listOf(MacroStep.IsoCeiling(0x06)))
-        val cam = FakeCamera(liveMain)
-        val result = runner(cam, this).execute(bad)
-        assertIs<MacroResult.Stopped>(result)
-        assertTrue(cam.sent.isEmpty())
+    fun dLog2AutoIsoCeilingAppliesEvenWhenReadBackIsSkipped() = runTest {
+        // Newer firmware: D-Log2 has Auto ISO. The pinned session skips the GET there (refresh false).
+        val autoDLog2 = MacroPreset(
+            "主攝",
+            listOf(MacroStep.Zoom(1.0), MacroStep.ColorMode(DLOG2), MacroStep.ExposureMode(AUTO), MacroStep.IsoCeiling(0x06)),
+        )
+        val cam = FakeCamera(liveMain).apply { refreshResult = false }
+        assertIs<MacroResult.Done>(runner(cam, this).execute(autoDLog2))
+        assertEquals(0x06, cam.state.value.isoLimit)
+        assertEquals(AUTO, cam.state.value.expoMode)
     }
 
     @Test

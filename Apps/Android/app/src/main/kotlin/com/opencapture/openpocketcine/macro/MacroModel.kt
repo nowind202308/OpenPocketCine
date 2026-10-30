@@ -26,7 +26,10 @@ sealed interface MacroStep {
         override val label get() = "曝光模式"
     }
 
-    /** Auto ISO ceiling as `IsoLimit.rawValue`. Only in Auto exposure, and not in D-Log2 (no Auto ISO there). */
+    /**
+     * Auto ISO ceiling as `IsoLimit.rawValue`. Only in Auto exposure. D-Log2 gained Auto ISO
+     * (400–800 / 1600 / 3200) in later firmware; the OpenCine pin still assumes it has none.
+     */
     data class IsoCeiling(val raw: Int) : MacroStep {
         override val label get() = "ISO 上限"
     }
@@ -60,14 +63,14 @@ interface MacroCamera {
     /** Fire the one existing setter for [step]; confirmation arrives later through [state]. */
     fun send(step: MacroStep)
 
-    /** Re-read the Auto ISO ceiling from the camera; the session sets it optimistically on write. */
+    /**
+     * Ask the camera to report the Auto ISO ceiling again; the session sets it optimistically on
+     * write. False when the GET was not sent (the OpenCine pin skips it in D-Log2).
+     */
     suspend fun refreshIsoCeiling(): Boolean = true
 }
 
 internal const val ZOOM_TOLERANCE = 0.15
-
-/** `CameraCommands.COLOR_DLOG2`, duplicated so this file stays free of the OpenCine modules. */
-internal const val COLOR_DLOG2_CODE = 0x41
 
 /** True when the camera already reports what [step] asks for. */
 internal fun MacroStep.isSatisfiedBy(s: MacroCameraState): Boolean = when (this) {
@@ -82,7 +85,5 @@ internal fun MacroStep.isSatisfiedBy(s: MacroCameraState): Boolean = when (this)
 internal fun MacroStep.unsupportedReason(s: MacroCameraState): String? = when (this) {
     is MacroStep.ColorMode ->
         if (s.availableColorModes.isNotEmpty() && mode !in s.availableColorModes) "相機目前不提供此色彩模式" else null
-    is MacroStep.IsoCeiling ->
-        if (s.colorMode == COLOR_DLOG2_CODE) "D-Log2 沒有自動 ISO，請改用固定 ISO" else null
     else -> null
 }

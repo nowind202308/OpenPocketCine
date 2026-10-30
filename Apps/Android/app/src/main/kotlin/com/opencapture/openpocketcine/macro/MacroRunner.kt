@@ -72,9 +72,9 @@ class MacroRunner(
             if (!reached.live) return MacroResult.Stopped(preset.name, step, "時連線中斷")
             if (reached.recording) return MacroResult.Stopped(preset.name, step, "時開始錄影")
 
-            if (step is MacroStep.IsoCeiling && !camera.refreshIsoCeiling()) {
-                return MacroResult.Stopped(preset.name, step, "無法讀回")
-            }
+            // Best effort: a sent GET lets a refusal surface before the settle check below.
+            // Not sending one (D-Log2 on the current OpenCine pin) leaves only that check.
+            if (step is MacroStep.IsoCeiling) camera.refreshIsoCeiling()
         }
 
         delay(settleMs)
