@@ -25,6 +25,15 @@ import com.opencapture.opencine.cameracontrols.MonitorLegalPage
 import com.opencapture.opencine.runtime.MonitorHDRDisplay
 import com.opencapture.opencine.vocabulary.ConnectionPhase
 import com.opencapture.openpocketcine.diagnostics.AppDiagnostics
+import com.opencapture.openpocketcine.macro.MacroKeypad
+import com.opencapture.openpocketcine.macro.MacroRunner
+import com.opencapture.openpocketcine.macro.PocketPresets
+import com.opencapture.openpocketcine.macro.SessionMacroCamera
+import com.opencapture.openpocketcine.macro.note
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.content.Intent
@@ -69,6 +78,9 @@ open class MainActivity : ComponentActivity() {
         private set
     /** The media-button remote shutter (A2-32); the shared live surface arms it while the monitor is in front. */
     private lateinit var remoteShutter: MonitorRemoteShutter
+    /** Bluetooth macro keypad: one key applies a whole preset (lens, color, exposure, ISO). */
+    private val macroScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private lateinit var macroKeypad: MacroKeypad
     var hideSystemNavigation = false
     var playbackHidesSystemNavigation = false
 
@@ -83,6 +95,16 @@ open class MainActivity : ComponentActivity() {
         model = retainedMonitorRoot { createModel().also(AppModel::prepareStartup) }
         model.gimbalGamepad.ensureListening(this, model)
         remoteShutter = MonitorRemoteShutter(applicationContext, "OpenPocketCineRemoteShutter")
+        val macroRunner = MacroRunner(
+            camera = SessionMacroCamera(model, macroScope),
+            scope = macroScope,
+            onResult = { model.session.presentControlNote(it.note()) },
+        )
+        macroKeypad = MacroKeypad(
+            bindings = PocketPresets.bindings,
+            isActive = { model.session.phase == ConnectionPhase.LIVE },
+            run = { macroRunner.run(it) },
+        )
         launch.setContent(this) {
             OpenPocketCineTheme {
                 val haptics = rememberOperatorHaptics { model.hapticsEnabled }
@@ -141,6 +163,8 @@ open class MainActivity : ComponentActivity() {
 
     @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (::macroKeypad.isInitialized &&
+            macroKeypad.onKey(event.keyCode, event.action, event.repeatCount)) return true
         if (::model.isInitialized && model.gimbalGamepad.onKey(event, model)) return true
         // Only an armed shutter (live view in front, opted in) consumes volume and media keys.
         if (::remoteShutter.isInitialized && remoteShutter.dispatchKeyEvent(event)) return true
@@ -149,6 +173,7 @@ open class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         if (::remoteShutter.isInitialized) remoteShutter.close()
+        macroScope.cancel()
         super.onDestroy()
     }
 }
