@@ -9,6 +9,14 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Fork: floating macro button. The overlay draws it over other apps; the connectedDevice
+        foreground service keeps the camera link usable while another app is in front
+        (CHANGE_WIFI_STATE above is that type's prerequisite on Android 14+). -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Android 15+: drop the HDR panel boost while the screen is being recorded. -->
     <uses-permission android:name="android.permission.DETECT_SCREEN_RECORDING" />
 
@@ -61,6 +69,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".macro.MacroSettingsActivity"
+            android:exported="false"
+            android:label="@string/macro_settings_title"
+            android:theme="@style/Theme.OpenPocketCine" />
+        <service
+            android:name=".macro.FloatingMacroService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.mediafileprovider"

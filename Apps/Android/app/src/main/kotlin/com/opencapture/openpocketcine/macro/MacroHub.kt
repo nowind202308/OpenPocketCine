@@ -1,0 +1,58 @@
+package com.opencapture.openpocketcine.macro
+
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+/** One row of the floating menu: the preset and the keypad key that also runs it. */
+data class MacroMenuEntry(val key: String, val preset: MacroPreset)
+
+/**
+ * What the activity lends the floating button while it owns a camera session: the menu, the
+ * camera facts, whether a run is going, and how to start one. Every trigger (keypad, floating
+ * menu) goes through the same [run], so the runner's safety checks exist once.
+ */
+class MacroAttachment(
+    val menu: List<MacroMenuEntry>,
+    val camera: StateFlow<MacroCameraState>,
+    val running: StateFlow<String?>,
+    private val start: (MacroPreset) -> Boolean,
+) {
+    fun run(preset: MacroPreset): Boolean = start(preset)
+}
+
+/**
+ * The link between the activity, which owns the session and the runner, and the floating-button
+ * service. Pure Kotlin so it tests on the JVM; the app uses the process-wide [MacroHub].
+ */
+open class MacroLink {
+    private val _attachment = MutableStateFlow<MacroAttachment?>(null)
+    private val _results = MutableSharedFlow<MacroResult>(
+        extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    /** Null while no activity holds a session: the service stops itself then. */
+    val attachment: StateFlow<MacroAttachment?> = _attachment.asStateFlow()
+
+    /** Every finished run, whichever trigger started it. */
+    val results: SharedFlow<MacroResult> = _results.asSharedFlow()
+
+    fun attach(attachment: MacroAttachment) {
+        _attachment.value = attachment
+    }
+
+    /** Only the current owner can detach, so a recreated activity is never cut off by its predecessor. */
+    fun detach(attachment: MacroAttachment) {
+        _attachment.compareAndSet(attachment, null)
+    }
+
+    fun report(result: MacroResult) {
+        _results.tryEmit(result)
+    }
+}
+
+object MacroHub : MacroLink()

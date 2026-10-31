@@ -47,6 +47,13 @@ object PocketPresets {
         ),
     )
 
+    /** The floating menu's rows, top to bottom, each with the keypad key that runs it. */
+    val menu: List<MacroMenuEntry> = listOf(
+        MacroMenuEntry("1", main),
+        MacroMenuEntry("2", tele),
+        MacroMenuEntry("3", mainFixedIso),
+    )
+
     /** Number row, numpad and F-keys all work, so most macro keypads need no remapping. */
     val bindings: Map<Int, MacroPreset> = mapOf(
         KeyEvent.KEYCODE_1 to main,

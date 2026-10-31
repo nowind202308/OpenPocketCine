@@ -2,4 +2,40 @@
 <resources>
     <string name="app_name">OpenPocketCine</string>
     <string name="startup_wordmark">OPENPOCKETCINE</string>
+
+    <!-- Floating macro button (fork). -->
+    <string name="macro_button_description">巨集設定組選單</string>
+    <string name="macro_glyph_offline">離線</string>
+    <string name="macro_glyph_ready">巨集</string>
+    <string name="macro_glyph_recording">錄影</string>
+    <string name="macro_glyph_running">套用中</string>
+    <string name="macro_glyph_done">✓</string>
+    <string name="macro_glyph_failed">✕</string>
+    <string name="macro_menu_hint">選擇要套用的設定組</string>
+    <string name="macro_menu_row">%1$s　%2$s</string>
+    <string name="macro_menu_row_current">%1$s　%2$s（目前）</string>
+    <string name="macro_menu_settings">設定</string>
+    <string name="macro_menu_close">收起</string>
+    <string name="macro_channel_name">浮動巨集按鈕</string>
+    <string name="macro_notification_title">浮動巨集按鈕運作中</string>
+    <string name="macro_notification_idle">點浮動按鈕選擇設定組</string>
+    <string name="macro_notification_stop">停止</string>
+    <string name="macro_permission_hint">浮動巨集按鈕需要懸浮視窗權限：長按 App 圖示 →「浮動巨集按鈕」</string>
+    <string name="macro_shortcut_short">浮動巨集按鈕</string>
+    <string name="macro_shortcut_long">浮動巨集按鈕設定</string>
+
+    <string name="macro_settings_title">浮動巨集按鈕</string>
+    <string name="macro_settings_intro">相機連線後，畫面邊緣會出現一顆浮動按鈕，切到其他 App 也能一鍵切換 Pocket 4P 的設定組。</string>
+    <string name="macro_settings_enable">啟用浮動按鈕</string>
+    <string name="macro_settings_overlay">懸浮視窗</string>
+    <string name="macro_settings_overlay_detail">必要。允許按鈕顯示在其他 App 上方。</string>
+    <string name="macro_settings_notifications">通知</string>
+    <string name="macro_settings_notifications_detail">建議。顯示運作狀態、最近一次結果與停止按鈕。</string>
+    <string name="macro_settings_battery">不限制電池用量</string>
+    <string name="macro_settings_battery_detail">建議。避免系統在背景中斷相機連線。在清單中找到本 App，設為「不限制」或「不最佳化」。</string>
+    <string name="macro_settings_open">前往設定</string>
+    <string name="macro_settings_allow">允許</string>
+    <string name="macro_settings_done">已完成</string>
+    <string name="macro_settings_presets">設定組（實體小鍵盤按鍵）</string>
+    <string name="macro_settings_usage">點浮動按鈕開啟選單，拖曳可移動位置，放開會貼齊左右邊緣。成功震一下，失敗震三下。通知列的「停止」會關閉按鈕到下次開啟 App。</string>
 </resources>

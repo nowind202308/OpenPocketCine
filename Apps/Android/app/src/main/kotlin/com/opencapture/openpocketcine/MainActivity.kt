@@ -25,15 +25,26 @@ import com.opencapture.opencine.cameracontrols.MonitorLegalPage
 import com.opencapture.opencine.runtime.MonitorHDRDisplay
 import com.opencapture.opencine.vocabulary.ConnectionPhase
 import com.opencapture.openpocketcine.diagnostics.AppDiagnostics
+import com.opencapture.openpocketcine.macro.FloatingMacroLogic
+import com.opencapture.openpocketcine.macro.FloatingMacroService
+import com.opencapture.openpocketcine.macro.MacroAttachment
+import com.opencapture.openpocketcine.macro.MacroHub
 import com.opencapture.openpocketcine.macro.MacroKeypad
+import com.opencapture.openpocketcine.macro.MacroPrefs
 import com.opencapture.openpocketcine.macro.MacroRunner
+import com.opencapture.openpocketcine.macro.MacroSettingsActivity
 import com.opencapture.openpocketcine.macro.PocketPresets
 import com.opencapture.openpocketcine.macro.SessionMacroCamera
 import com.opencapture.openpocketcine.macro.note
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.graphics.drawable.IconCompat
+import androidx.lifecycle.Lifecycle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.content.Intent
@@ -81,6 +92,10 @@ open class MainActivity : ComponentActivity() {
     /** Bluetooth macro keypad: one key applies a whole preset (lens, color, exposure, ISO). */
     private val macroScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var macroKeypad: MacroKeypad
+    /** What this activity lends the floating button (B plan); detached on destroy. */
+    private lateinit var macroAttachment: MacroAttachment
+    /** The overlay-permission hint shows once per activity, not on every reconnect. */
+    private var macroPermissionHinted = false
     var hideSystemNavigation = false
     var playbackHidesSystemNavigation = false
 
@@ -95,16 +110,26 @@ open class MainActivity : ComponentActivity() {
         model = retainedMonitorRoot { createModel().also(AppModel::prepareStartup) }
         model.gimbalGamepad.ensureListening(this, model)
         remoteShutter = MonitorRemoteShutter(applicationContext, "OpenPocketCineRemoteShutter")
+        val macroCamera = SessionMacroCamera(model, macroScope)
         val macroRunner = MacroRunner(
-            camera = SessionMacroCamera(model, macroScope),
+            camera = macroCamera,
             scope = macroScope,
-            onResult = { model.session.presentControlNote(it.note()) },
+            onResult = {
+                model.session.presentControlNote(it.note())
+                MacroHub.report(it)
+            },
         )
         macroKeypad = MacroKeypad(
             bindings = PocketPresets.bindings,
             isActive = { model.session.phase == ConnectionPhase.LIVE },
             run = { macroRunner.run(it) },
         )
+        // Keypad and floating menu share this runner, so only one preset is ever in flight.
+        macroAttachment = MacroAttachment(PocketPresets.menu, macroCamera.state, macroRunner.running) { macroRunner.run(it) }
+        MacroHub.attach(macroAttachment)
+        FloatingMacroService.dismissed = false
+        macroScope.launch { model.session.phaseFlow.collect { updateFloatingMacro() } }
+        publishMacroShortcut()
         launch.setContent(this) {
             OpenPocketCineTheme {
                 val haptics = rememberOperatorHaptics { model.hapticsEnabled }
@@ -154,6 +179,43 @@ open class MainActivity : ComponentActivity() {
             model.shell.setSceneActive(true)
             model.gimbalGamepad.ensureListening(this, model)
         }
+        // Returning from the overlay-permission screen lands here.
+        if (::macroAttachment.isInitialized) updateFloatingMacro()
+    }
+
+    /**
+     * Starts the floating macro service while this activity is in front with a live camera
+     * (Android refuses a foreground-service start from the background), and stops it when it is
+     * turned off or its permission is gone. A dropped link alone leaves it running, greyed out.
+     */
+    private fun updateFloatingMacro() {
+        val enabled = MacroPrefs.floatingEnabled(this) && !FloatingMacroService.dismissed
+        val granted = MacroPrefs.overlayGranted(this)
+        val live = model.session.phase == ConnectionPhase.LIVE
+        if (FloatingMacroLogic.shouldStop(enabled, granted, attached = true)) {
+            FloatingMacroService.stop(this)
+            if (enabled && !granted && live && !macroPermissionHinted) {
+                macroPermissionHinted = true
+                model.session.presentControlNote(getString(R.string.macro_permission_hint))
+            }
+            return
+        }
+        val inFront = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        if (inFront && FloatingMacroLogic.shouldStart(enabled, granted, attached = true, live = live)) {
+            FloatingMacroService.start(this)
+        }
+    }
+
+    /** Long-press the app icon → the floating button's settings; follows the .debug package id. */
+    private fun publishMacroShortcut() {
+        val shortcut = ShortcutInfoCompat.Builder(this, "floating_macro")
+            .setShortLabel(getString(R.string.macro_shortcut_short))
+            .setLongLabel(getString(R.string.macro_shortcut_long))
+            .setIcon(IconCompat.createWithResource(this, R.mipmap.ic_launcher))
+            .setIntent(Intent(this, MacroSettingsActivity::class.java).setAction(Intent.ACTION_VIEW))
+            .build()
+        // Rate-limited or refused by the launcher: the floating menu's Settings still opens it.
+        runCatching { ShortcutManagerCompat.pushDynamicShortcut(this, shortcut) }
     }
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
@@ -173,6 +235,7 @@ open class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         if (::remoteShutter.isInitialized) remoteShutter.close()
+        if (::macroAttachment.isInitialized) MacroHub.detach(macroAttachment)
         macroScope.cancel()
         super.onDestroy()
     }

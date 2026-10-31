@@ -3,6 +3,9 @@ package com.opencapture.openpocketcine.macro
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -36,6 +39,10 @@ class MacroRunner(
     private val settleMs: Long = 1_500,
 ) {
     private var job: Job? = null
+    private val _running = MutableStateFlow<String?>(null)
+
+    /** Name of the preset being applied, null when idle; the floating button shows it. */
+    val running: StateFlow<String?> = _running.asStateFlow()
 
     val isRunning: Boolean get() = job?.isActive == true
 
@@ -45,13 +52,19 @@ class MacroRunner(
             onResult(MacroResult.Refused("上一組設定仍在套用中"))
             return false
         }
-        job = scope.launch { onResult(execute(preset)) }
+        _running.value = preset.name
+        // Cleared before the result is reported, so a listener never sees "running" after "done".
+        job = scope.launch {
+            val result = try { execute(preset) } finally { _running.value = null }
+            onResult(result)
+        }
         return true
     }
 
     fun cancel() {
         job?.cancel()
         job = null
+        _running.value = null
     }
 
     internal suspend fun execute(preset: MacroPreset): MacroResult {
