@@ -35,4 +35,12 @@
     <string name="macro_settings_done">已完成</string>
     <string name="macro_settings_presets">設定組（實體小鍵盤按鍵）</string>
     <string name="macro_settings_usage">按住浮動按鈕往扇區方向拖曳、放開即套用，拖回按鈕上放開則取消。輕點按鈕會讓選單停留，再點扇區套用。長按不動約半秒可移動按鈕，放開會貼齊左右邊緣。成功震一下，失敗震三下。通知列的「停止」會關閉按鈕到下次開啟 App。</string>
+
+    <!-- Bluetooth control probe (fork). -->
+    <string name="ble_probe_title">藍牙控制實驗</string>
+    <string name="ble_probe_intro">測試相機是否接受「只走藍牙」改參數，用來決定實體控制器能不能用 XIAO nRF52840。請先連上相機、不要錄影，最好在自動曝光下執行。實驗會暫時改白平衡和曝光補償，約 10 秒後自動改回原本的值。</string>
+    <string name="ble_probe_start">開始實驗</string>
+    <string name="ble_probe_running">實驗中…</string>
+    <string name="ble_probe_copy">複製結果</string>
+    <string name="ble_probe_no_session">請先從 App 主畫面連上相機，再回到這裡。</string>
 </resources>

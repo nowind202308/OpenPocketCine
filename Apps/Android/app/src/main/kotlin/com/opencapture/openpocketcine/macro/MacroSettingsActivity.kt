@@ -1,6 +1,8 @@
 package com.opencapture.openpocketcine.macro
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -19,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
@@ -29,6 +32,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -42,6 +46,8 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import androidx.core.net.toUri
 import com.opencapture.openpocketcine.R
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * The floating button's own settings, opened from the app icon's long-press shortcut or the
@@ -126,7 +132,36 @@ class MacroSettingsActivity : ComponentActivity() {
                     style = MaterialTheme.typography.bodyLarge)
             }
             Text(stringResource(R.string.macro_settings_usage), style = MaterialTheme.typography.bodyMedium)
+            HorizontalDivider()
+            BleProbeSection()
         }
+    }
+
+    /** Can a Bluetooth-only controller (XIAO nRF52840) change settings? Runs over the live session. */
+    @Composable
+    private fun BleProbeSection() {
+        val probe = MacroHub.bleProbe
+        val running by (probe?.running ?: idle).collectAsState()
+        val report by (probe?.report ?: noReport).collectAsState()
+        Text(stringResource(R.string.ble_probe_title), style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.ble_probe_intro), style = MaterialTheme.typography.bodyMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(onClick = { probe?.start() }, enabled = probe != null && !running) {
+                Text(stringResource(if (running) R.string.ble_probe_running else R.string.ble_probe_start))
+            }
+            val text = report
+            if (text != null) {
+                OutlinedButton(onClick = { copy(text) }) { Text(stringResource(R.string.ble_probe_copy)) }
+            }
+        }
+        if (probe == null) {
+            Text(stringResource(R.string.ble_probe_no_session), style = MaterialTheme.typography.bodySmall)
+        }
+        report?.let { SelectionContainer { Text(it, style = MaterialTheme.typography.bodySmall) } }
+    }
+
+    private fun copy(text: String) {
+        getSystemService<ClipboardManager>()?.setPrimaryClip(ClipData.newPlainText("ble-probe", text))
     }
 
     @Composable
@@ -142,6 +177,11 @@ class MacroSettingsActivity : ComponentActivity() {
                 Button(onClick = onAction) { Text(action) }
             }
         }
+    }
+
+    private companion object {
+        val idle: StateFlow<Boolean> = MutableStateFlow(false)
+        val noReport: StateFlow<String?> = MutableStateFlow(null)
     }
 
     private fun notificationsGranted(): Boolean {

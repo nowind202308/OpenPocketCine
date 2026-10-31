@@ -34,6 +34,7 @@ import com.opencapture.openpocketcine.macro.MacroPrefs
 import com.opencapture.openpocketcine.macro.MacroRunner
 import com.opencapture.openpocketcine.macro.MacroSettingsActivity
 import com.opencapture.openpocketcine.macro.PocketPresets
+import com.opencapture.openpocketcine.macro.SessionBleProbe
 import com.opencapture.openpocketcine.macro.SessionMacroCamera
 import com.opencapture.openpocketcine.macro.note
 import androidx.core.content.pm.ShortcutInfoCompat
@@ -94,6 +95,8 @@ open class MainActivity : ComponentActivity() {
     private lateinit var macroKeypad: MacroKeypad
     /** What this activity lends the floating button (B plan); detached on destroy. */
     private lateinit var macroAttachment: MacroAttachment
+    /** Bluetooth control probe for the settings page: can a BLE-only controller change settings? */
+    private lateinit var bleProbe: SessionBleProbe
     /** The overlay-permission hint shows once per activity, not on every reconnect. */
     private var macroPermissionHinted = false
     var hideSystemNavigation = false
@@ -127,6 +130,8 @@ open class MainActivity : ComponentActivity() {
         // Keypad and floating menu share this runner, so only one preset is ever in flight.
         macroAttachment = MacroAttachment(PocketPresets.menu, macroCamera.state, macroRunner.running) { macroRunner.run(it) }
         MacroHub.attach(macroAttachment)
+        bleProbe = SessionBleProbe(model, macroScope) { macroRunner.isRunning }
+        MacroHub.bleProbe = bleProbe
         FloatingMacroService.dismissed = false
         macroScope.launch { model.session.phaseFlow.collect { updateFloatingMacro() } }
         publishMacroShortcut()
@@ -236,6 +241,7 @@ open class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         if (::remoteShutter.isInitialized) remoteShutter.close()
         if (::macroAttachment.isInitialized) MacroHub.detach(macroAttachment)
+        if (::bleProbe.isInitialized && MacroHub.bleProbe === bleProbe) MacroHub.bleProbe = null
         macroScope.cancel()
         super.onDestroy()
     }

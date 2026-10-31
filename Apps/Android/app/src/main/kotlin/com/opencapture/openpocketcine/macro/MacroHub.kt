@@ -55,4 +55,8 @@ open class MacroLink {
     }
 }
 
-object MacroHub : MacroLink()
+object MacroHub : MacroLink() {
+    /** The Bluetooth control probe, lent by the activity that owns the session. */
+    @Volatile
+    var bleProbe: BleProbeHost? = null
+}
