@@ -1,27 +1,34 @@
 package com.opencapture.openpocketcine.macro
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Handler
+import android.os.Looper
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.WindowManager
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.getSystemService
 import com.opencapture.openpocketcine.R
 
 /**
- * The floating button and its menu, drawn over every app with plain views (no Compose host
- * needed inside a service). Sized for gloved hands: a 64 dp button and 60 dp menu rows.
- * All decisions come from [FloatingMacroLogic]; this class only draws and forwards touches.
+ * The floating button and its radial menu, drawn over every app with plain views.
+ *
+ * - Press and drag toward a sector, release: runs it (the press's own gesture, no aiming).
+ *   Releasing back on the button cancels.
+ * - Tap: the fan stays open; tap a sector, or anywhere else to close.
+ * - Long-press without moving: the button lifts and can be dragged to another edge.
+ *
+ * The last sector opens these settings. All decisions come from [FloatingMacroLogic] and
+ * [RadialMenuLogic]; this class only draws and routes touches.
  */
 class FloatingMacroOverlay(
     private val context: Context,
@@ -32,7 +39,6 @@ class FloatingMacroOverlay(
     private val windows = checkNotNull(context.getSystemService<WindowManager>())
     private val density = context.resources.displayMetrics.density
     private val buttonSize = dp(64)
-    private val gap = dp(8)
 
     private val button = TextView(context).apply {
         gravity = Gravity.CENTER
@@ -42,49 +48,13 @@ class FloatingMacroOverlay(
         contentDescription = context.getString(R.string.macro_button_description)
         elevation = dp(6).toFloat()
     }
-    private val buttonParams = overlayParams(buttonSize, buttonSize, focusOutside = false)
+    private val buttonParams = overlayParams(buttonSize, buttonSize, touchable = true)
 
-    private val header = TextView(context).apply {
-        setTextColor(Color.WHITE)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-        setPadding(dp(16), dp(12), dp(16), dp(8))
-    }
-    private val rows: List<TextView> = menu.map { entry ->
-        TextView(context).apply {
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-            gravity = Gravity.CENTER_VERTICAL
-            minHeight = dp(60)
-            setPadding(dp(16), 0, dp(16), 0)
-            background = rounded(ROW_COLOR, dp(10))
-            setOnClickListener {
-                closeMenu()
-                onRun(entry.preset)
-            }
-        }
-    }
-    // ACTION_OUTSIDE only closes the menu; it is never a click, so there is no performClick to call.
-    @SuppressLint("ClickableViewAccessibility")
-    private val menuView = LinearLayout(context).apply {
-        orientation = LinearLayout.VERTICAL
-        background = rounded(PANEL_COLOR, dp(16))
-        setPadding(dp(8), dp(4), dp(8), dp(8))
-        addView(header)
-        rows.forEach { row ->
-            addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                .apply { topMargin = dp(6) })
-        }
-        addView(footer(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            .apply { topMargin = dp(6) })
-        // Touching anywhere else closes the menu, so it never sits over the frame by accident.
-        setOnTouchListener { _, event ->
-            if (event.action == MotionEvent.ACTION_OUTSIDE) closeMenu()
-            false
-        }
-    }
-    private val menuWidth = dp(280)
-    private val menuParams = overlayParams(menuWidth, ViewGroup.LayoutParams.WRAP_CONTENT, focusOutside = true)
-    private var menuShown = false
+    private val radial = RadialMenuView(context).apply { onPick = ::pick }
+    private val radialParams = overlayParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, touchable = false,
+    ).apply { flags = flags or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS }
+    private var radialShown = false
     private var shown = false
 
     private var lastCamera = MacroCameraState()
@@ -92,8 +62,9 @@ class FloatingMacroOverlay(
     private var lastNote: String? = null
 
     init {
-        button.setOnClickListener { if (menuShown) closeMenu() else openMenu() }
-        button.setOnTouchListener(DragListener())
+        // A tap (or TalkBack's click) leaves the fan open; the press already drew it.
+        button.setOnClickListener { if (radialShown && radial.tapMode) closeRadial() else openRadial(tapMode = true) }
+        button.setOnTouchListener(PressListener())
     }
 
     fun show() {
@@ -101,24 +72,24 @@ class FloatingMacroOverlay(
         val screen = screenSize()
         val saved = MacroPrefs.buttonPosition(context)
         buttonParams.x = saved?.first ?: FloatingMacroLogic.snapX(screen.first, buttonSize, screen.first)
-        buttonParams.y = FloatingMacroLogic.clampY(saved?.second ?: (screen.second / 3), buttonSize, screen.second)
+        buttonParams.y = restY(saved?.second ?: (screen.second / 3))
         windows.addView(button, buttonParams)
         shown = true
     }
 
     fun remove() {
-        closeMenu()
+        closeRadial()
         if (shown) windows.removeView(button)
         shown = false
     }
 
-    /** Rotation or a fold: keep the button against an edge and on screen. */
+    /** Rotation or a fold: keep the button against an edge, with room for the fan. */
     fun onScreenChanged() {
         if (!shown) return
-        closeMenu()
+        closeRadial()
         val screen = screenSize()
         buttonParams.x = FloatingMacroLogic.snapX(buttonParams.x, buttonSize, screen.first)
-        buttonParams.y = FloatingMacroLogic.clampY(buttonParams.y, buttonSize, screen.second)
+        buttonParams.y = restY(buttonParams.y)
         windows.updateViewLayout(button, buttonParams)
     }
 
@@ -133,106 +104,133 @@ class FloatingMacroOverlay(
             setColor(style.color)
             setStroke(dp(2), Color.argb(200, 255, 255, 255))
         }
-        if (menuShown) renderMenu()
+        if (radialShown) radial.update(items(), status())
     }
 
-    private fun renderMenu() {
+    /** Presets first, settings last; a blocked preset is greyed but still sent, so the runner says why. */
+    private fun items(): List<RadialItem> {
         val block = FloatingMacroLogic.blockReason(lastCamera, lastRunning)
-        header.text = block ?: lastNote ?: context.getString(R.string.macro_menu_hint)
-        menu.forEachIndexed { i, entry ->
-            val row = rows[i]
-            val current = FloatingMacroLogic.isCurrent(entry.preset, lastCamera)
-            row.text = context.getString(
-                if (current) R.string.macro_menu_row_current else R.string.macro_menu_row,
-                entry.key, entry.preset.name,
-            )
-            row.isEnabled = block == null
-            row.alpha = if (block == null) 1f else 0.4f
+        return menu.map { entry ->
+            RadialItem(entry.key, entry.preset.name, block == null,
+                FloatingMacroLogic.isCurrent(entry.preset, lastCamera))
+        } + RadialItem("⚙", context.getString(R.string.macro_menu_settings), enabled = true, current = false)
+    }
+
+    private fun status(): String? = FloatingMacroLogic.blockReason(lastCamera, lastRunning) ?: lastNote
+
+    private fun openRadial(tapMode: Boolean) {
+        if (!shown) return
+        if (!radialShown) {
+            val center = buttonCenter()
+            radial.open(center.first, center.second, items(), status())
+            windows.addView(radial, radialParams)
+            radialShown = true
+        }
+        if (tapMode) enterTapMode()
+    }
+
+    /** After a tap the fan takes touches itself; until then the press stays with the button. */
+    private fun enterTapMode() {
+        radial.tapMode = true
+        radialParams.flags = radialParams.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+        windows.updateViewLayout(radial, radialParams)
+    }
+
+    private fun closeRadial() {
+        if (!radialShown) return
+        windows.removeView(radial)
+        radialParams.flags = radialParams.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        radialShown = false
+    }
+
+    private fun pick(index: Int?) {
+        closeRadial()
+        when {
+            index == null -> Unit
+            index < menu.size -> onRun(menu[index].preset)
+            else -> onOpenSettings()
         }
     }
 
-    private fun openMenu() {
-        if (menuShown || !shown) return
-        renderMenu()
-        val screen = screenSize()
-        menuView.measure(
-            View.MeasureSpec.makeMeasureSpec(menuWidth, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(screen.second, View.MeasureSpec.AT_MOST),
-        )
-        menuParams.x = FloatingMacroLogic.menuX(buttonParams.x, buttonSize, menuWidth, screen.first)
-        menuParams.y = FloatingMacroLogic.menuY(buttonParams.y, buttonSize, menuView.measuredHeight, screen.second, gap)
-        windows.addView(menuView, menuParams)
-        menuShown = true
-    }
-
-    private fun closeMenu() {
-        if (!menuShown) return
-        windows.removeView(menuView)
-        menuShown = false
-    }
-
-    private fun footer(): LinearLayout = LinearLayout(context).apply {
-        orientation = LinearLayout.HORIZONTAL
-        addView(footerButton(R.string.macro_menu_settings) { closeMenu(); onOpenSettings() },
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(6) })
-        addView(footerButton(R.string.macro_menu_close) { closeMenu() },
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-    }
-
-    private fun footerButton(label: Int, onClick: () -> Unit): TextView = TextView(context).apply {
-        text = context.getString(label)
-        setTextColor(Color.WHITE)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-        gravity = Gravity.CENTER
-        minHeight = dp(48)
-        background = rounded(FOOTER_COLOR, dp(10))
-        setOnClickListener { onClick() }
-    }
-
-    /** Drag moves the button; a release within touch slop is a click (so TalkBack and taps agree). */
-    private inner class DragListener : View.OnTouchListener {
+    /**
+     * Routes one press on the button: a drag selects in the fan, a still release is a click,
+     * and a still long-press lifts the button to move it.
+     */
+    private inner class PressListener : View.OnTouchListener {
         private val slop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
+        private val handler = Handler(Looper.getMainLooper())
         private var downX = 0f
         private var downY = 0f
         private var startX = 0
         private var startY = 0
-        private var dragging = false
+        private var travelled = false
+        private var moving = false
+        private val lift = Runnable {
+            if (travelled) return@Runnable
+            moving = true
+            closeRadial()
+            button.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        }
 
         override fun onTouch(view: View, event: MotionEvent): Boolean {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downX = event.rawX; downY = event.rawY
                     startX = buttonParams.x; startY = buttonParams.y
-                    dragging = false
+                    travelled = false
+                    moving = false
+                    // The fan shows at once; this press may still turn out to be a tap or a lift.
+                    openRadial(tapMode = false)
+                    handler.postDelayed(lift, ViewConfiguration.getLongPressTimeout().toLong())
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - downX
                     val dy = event.rawY - downY
-                    if (!dragging && !FloatingMacroLogic.isTap(dx, dy, slop)) {
-                        dragging = true
-                        closeMenu()
+                    if (!travelled && !FloatingMacroLogic.isTap(dx, dy, slop)) {
+                        travelled = true
+                        if (!moving) handler.removeCallbacks(lift)
                     }
-                    if (dragging) {
+                    if (moving) {
                         buttonParams.x = startX + dx.toInt()
                         buttonParams.y = startY + dy.toInt()
                         windows.updateViewLayout(button, buttonParams)
+                    } else if (radialShown) {
+                        radial.track(event.rawX, event.rawY)
                     }
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (!dragging) {
-                        view.performClick()
-                    } else {
-                        val screen = screenSize()
-                        buttonParams.x = FloatingMacroLogic.snapX(buttonParams.x, buttonSize, screen.first)
-                        buttonParams.y = FloatingMacroLogic.clampY(buttonParams.y, buttonSize, screen.second)
-                        windows.updateViewLayout(button, buttonParams)
-                        MacroPrefs.setButtonPosition(context, buttonParams.x, buttonParams.y)
+                    handler.removeCallbacks(lift)
+                    when {
+                        moving -> settle()
+                        travelled -> pick(if (radialShown) radial.track(event.rawX, event.rawY) else null)
+                        // A still release is a click: the fan already open switches to tap mode.
+                        else -> view.performClick()
                     }
                 }
-                MotionEvent.ACTION_CANCEL -> dragging = false
+                MotionEvent.ACTION_CANCEL -> {
+                    handler.removeCallbacks(lift)
+                    if (moving) settle() else closeRadial()
+                }
             }
             return true
         }
+
+        private fun settle() {
+            val screen = screenSize()
+            buttonParams.x = FloatingMacroLogic.snapX(buttonParams.x, buttonSize, screen.first)
+            buttonParams.y = restY(buttonParams.y)
+            windows.updateViewLayout(button, buttonParams)
+            MacroPrefs.setButtonPosition(context, buttonParams.x, buttonParams.y)
+            moving = false
+        }
+    }
+
+    private fun restY(y: Int): Int = RadialMenuLogic.restY(y, buttonSize, screenSize().second, radial.outer.toInt())
+
+    private fun buttonCenter(): Pair<Float, Float> {
+        val at = IntArray(2)
+        button.getLocationOnScreen(at)
+        return (at[0] + buttonSize / 2f) to (at[1] + buttonSize / 2f)
     }
 
     private class ToneStyle(val color: Int, val glyph: Int)
@@ -246,27 +244,16 @@ class FloatingMacroOverlay(
         FloatingTone.FAILED -> ToneStyle(Color.argb(240, 200, 40, 40), R.string.macro_glyph_failed)
     }
 
-    private fun overlayParams(width: Int, height: Int, focusOutside: Boolean) = WindowManager.LayoutParams(
+    private fun overlayParams(width: Int, height: Int, touchable: Boolean) = WindowManager.LayoutParams(
         width, height,
         WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-            (if (focusOutside) WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH else 0),
+            (if (touchable) 0 else WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE),
         PixelFormat.TRANSLUCENT,
     ).apply { gravity = Gravity.TOP or Gravity.START }
 
     private fun screenSize(): Pair<Int, Int> =
         context.resources.displayMetrics.let { it.widthPixels to it.heightPixels }
 
-    private fun rounded(color: Int, radius: Int) = GradientDrawable().apply {
-        setColor(color)
-        cornerRadius = radius.toFloat()
-    }
-
     private fun dp(value: Int): Int = (value * density + 0.5f).toInt()
-
-    private companion object {
-        val PANEL_COLOR = Color.argb(235, 20, 20, 24)
-        val ROW_COLOR = Color.argb(255, 44, 44, 52)
-        val FOOTER_COLOR = Color.argb(255, 32, 32, 38)
-    }
 }

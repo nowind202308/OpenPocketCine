@@ -57,17 +57,6 @@ object FloatingMacroLogic {
 
     fun clampY(y: Int, size: Int, screenHeight: Int): Int = y.coerceIn(0, max(0, screenHeight - size))
 
-    /** The menu opens below the button, or above it when it would run off the bottom. */
-    fun menuY(buttonY: Int, buttonSize: Int, menuHeight: Int, screenHeight: Int, gap: Int): Int {
-        val below = buttonY + buttonSize + gap
-        if (below + menuHeight <= screenHeight) return below
-        return max(0, buttonY - gap - menuHeight)
-    }
-
-    /** The menu hangs from the same side edge as the button. */
-    fun menuX(buttonX: Int, buttonSize: Int, menuWidth: Int, screenWidth: Int): Int =
-        if (buttonX + buttonSize / 2 < screenWidth / 2) 0 else max(0, screenWidth - menuWidth)
-
     /**
      * Start the service only with a live camera, so it is always started from the foreground
      * (Android refuses a foreground service started from the background).

@@ -11,11 +11,8 @@
     <string name="macro_glyph_running">套用中</string>
     <string name="macro_glyph_done">✓</string>
     <string name="macro_glyph_failed">✕</string>
-    <string name="macro_menu_hint">選擇要套用的設定組</string>
     <string name="macro_menu_row">%1$s　%2$s</string>
-    <string name="macro_menu_row_current">%1$s　%2$s（目前）</string>
     <string name="macro_menu_settings">設定</string>
-    <string name="macro_menu_close">收起</string>
     <string name="macro_channel_name">浮動巨集按鈕</string>
     <string name="macro_notification_title">浮動巨集按鈕運作中</string>
     <string name="macro_notification_idle">點浮動按鈕選擇設定組</string>
@@ -37,5 +34,5 @@
     <string name="macro_settings_allow">允許</string>
     <string name="macro_settings_done">已完成</string>
     <string name="macro_settings_presets">設定組（實體小鍵盤按鍵）</string>
-    <string name="macro_settings_usage">點浮動按鈕開啟選單，拖曳可移動位置，放開會貼齊左右邊緣。成功震一下，失敗震三下。通知列的「停止」會關閉按鈕到下次開啟 App。</string>
+    <string name="macro_settings_usage">按住浮動按鈕往扇區方向拖曳、放開即套用，拖回按鈕上放開則取消。輕點按鈕會讓選單停留，再點扇區套用。長按不動約半秒可移動按鈕，放開會貼齊左右邊緣。成功震一下，失敗震三下。通知列的「停止」會關閉按鈕到下次開啟 App。</string>
 </resources>

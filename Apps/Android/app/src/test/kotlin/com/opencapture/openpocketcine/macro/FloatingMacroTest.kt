@@ -67,15 +67,6 @@ class FloatingMacroLogicTest {
     }
 
     @Test
-    fun menuOpensBelowOrAboveAndOnTheButtonsSide() {
-        assertEquals(380, FloatingMacroLogic.menuY(200, 160, 600, 2400, 20))
-        // Near the bottom it flips above the button.
-        assertEquals(1380, FloatingMacroLogic.menuY(2000, 160, 600, 2400, 20))
-        assertEquals(0, FloatingMacroLogic.menuX(0, 160, 700, 1080))
-        assertEquals(380, FloatingMacroLogic.menuX(920, 160, 700, 1080))
-    }
-
-    @Test
     fun serviceStartsOnlyLiveButSurvivesADroppedLink() {
         assertTrue(FloatingMacroLogic.shouldStart(enabled = true, overlayGranted = true, attached = true, live = true))
         assertFalse(FloatingMacroLogic.shouldStart(enabled = true, overlayGranted = true, attached = true, live = false))
