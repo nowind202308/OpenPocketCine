@@ -28,6 +28,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
@@ -83,14 +84,16 @@ class FloatingMacroService : Service() {
                 menu = attachment.menu,
                 onRun = { attachment.run(it) },
                 onOpenSettings = ::openSettings,
+                zoom = attachment.zoom,
             )
             view.show()
             overlay = view
             scope.launch { MacroHub.results.collect { onResult(it) } }.also { results ->
                 try {
-                    combine(attachment.camera, attachment.running, flash) { camera, running, flashed ->
-                        Triple(camera, running, FloatingMacroLogic.tone(camera, running, flashed))
-                    }.collect { (camera, running, tone) -> view.render(tone, camera, running, lastNote) }
+                    val zoomState = attachment.zoom?.state ?: noZoom
+                    combine(attachment.camera, attachment.running, flash, zoomState) { camera, running, flashed, zoom ->
+                        RenderFrame(camera, running, zoom, FloatingMacroLogic.tone(camera, running, flashed, zoom))
+                    }.collect { f -> view.render(f.tone, f.camera, f.running, lastNote, f.zoom) }
                 } finally {
                     results.cancel()
                 }
@@ -183,7 +186,16 @@ class FloatingMacroService : Service() {
         super.onDestroy()
     }
 
+    private class RenderFrame(
+        val camera: MacroCameraState,
+        val running: String?,
+        val zoom: ZoomState?,
+        val tone: FloatingTone,
+    )
+
     companion object {
+        /** Stands in for a camera without zoom, so the render loop has one shape. */
+        private val noZoom: StateFlow<ZoomState?> = MutableStateFlow(null)
         private const val TAG = "OpenPocketCineMacro"
         private const val CHANNEL_ID = "floating_macro"
         private const val NOTIFICATION_ID = 0x4D41

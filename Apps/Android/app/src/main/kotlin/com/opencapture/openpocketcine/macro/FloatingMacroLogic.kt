@@ -3,7 +3,7 @@ package com.opencapture.openpocketcine.macro
 import kotlin.math.max
 
 /** What the floating button shows; the view maps each to a color and a glyph. */
-enum class FloatingTone { OFFLINE, READY, RECORDING, RUNNING, DONE, FAILED }
+enum class FloatingTone { OFFLINE, READY, RECORDING, RUNNING, ZOOMING, DONE, FAILED }
 
 /** How a finished run is felt: the tone to flash and a vibration waveform (off/on ms pairs). */
 data class FloatingFeedback(val tone: FloatingTone, val vibration: List<Long>)
@@ -30,9 +30,15 @@ object FloatingMacroLogic {
         else -> null
     }
 
-    /** A run in progress wins, then a fresh result flash, then the camera's own state. */
-    fun tone(camera: MacroCameraState, running: String?, flash: FloatingTone?): FloatingTone = when {
+    /** A run in progress wins, then a latched zoom, then a fresh result flash, then the camera. */
+    fun tone(
+        camera: MacroCameraState,
+        running: String?,
+        flash: FloatingTone?,
+        zoom: ZoomState? = null,
+    ): FloatingTone = when {
         running != null -> FloatingTone.RUNNING
+        zoom?.latched == true -> FloatingTone.ZOOMING
         flash != null -> flash
         !camera.live -> FloatingTone.OFFLINE
         camera.recording -> FloatingTone.RECORDING
@@ -42,6 +48,43 @@ object FloatingMacroLogic {
     fun feedback(result: MacroResult): FloatingFeedback = when (result) {
         is MacroResult.Done -> FloatingFeedback(FloatingTone.DONE, DONE_VIBRATION)
         is MacroResult.Refused, is MacroResult.Stopped -> FloatingFeedback(FloatingTone.FAILED, FAILED_VIBRATION)
+    }
+
+    /** Words the menu needs from resources, so the tree builds on the JVM. */
+    data class MenuLabels(val zoom: String, val zoomIn: String, val zoomOut: String, val settings: String)
+
+    /**
+     * Ring 1: the camera's presets, then 縮放, then settings. 縮放 opens 放大 / 縮小, each with
+     * speeds 1..7. Presets grey out while blocked (still sent, so the runner says why); zoom
+     * only needs a live camera, so it works while recording.
+     */
+    fun buildMenu(
+        menu: List<MacroMenuEntry>,
+        camera: MacroCameraState,
+        running: String?,
+        labels: MenuLabels,
+    ): List<RadialNode> {
+        val block = blockReason(camera, running)
+        val presets = menu.map { entry ->
+            RadialNode(
+                badge = entry.key,
+                label = entry.preset.name,
+                action = RadialAction.Preset(entry.preset),
+                enabled = block == null,
+                current = isCurrent(entry.preset, camera),
+            )
+        }
+        fun speeds(zoomIn: Boolean) = (1..ZoomSpeeds.LEVELS).map { level ->
+            RadialNode(badge = "$level", label = "", action = RadialAction.Zoom(zoomIn, level), enabled = camera.live)
+        }
+        val zoom = RadialNode(
+            badge = "±", label = labels.zoom, enabled = camera.live,
+            children = listOf(
+                RadialNode(badge = "+", label = labels.zoomIn, enabled = camera.live, children = speeds(true)),
+                RadialNode(badge = "−", label = labels.zoomOut, enabled = camera.live, children = speeds(false)),
+            ),
+        )
+        return presets + zoom + RadialNode(badge = "⚙", label = labels.settings, action = RadialAction.Settings)
     }
 
     /** True when the camera already matches every step: the menu marks that row as current. */

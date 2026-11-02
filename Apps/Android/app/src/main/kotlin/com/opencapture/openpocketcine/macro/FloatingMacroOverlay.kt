@@ -24,12 +24,14 @@ import com.opencapture.openpocketcine.R
  * The floating button and its radial menu, drawn over every app with plain views.
  *
  * - Press and drag toward a sector, release: runs it (the press's own gesture, no aiming).
- *   Releasing back on the button cancels.
- * - Tap: the fan stays open; tap a sector, or anywhere else to close.
+ *   Dragging onto a group opens its ring; releasing on a group, or back on the button, cancels.
+ * - 縮放 > 放大/縮小 > speed: zooms while the finger rests on a speed; releasing stops, and
+ *   releasing in the lock zone past the speed keeps zooming until the button is tapped.
+ * - Tap: the menu stays open; tap through the rings (a tapped speed zooms continuously).
  * - Long-press without moving: the button lifts and can be dragged to another edge.
  *
  * The last sector opens these settings. All decisions come from [FloatingMacroLogic] and
- * [RadialMenuLogic]; this class only draws and routes touches.
+ * [RadialTracker]; this class only draws and routes touches.
  */
 class FloatingMacroOverlay(
     private val context: Context,
@@ -37,6 +39,8 @@ class FloatingMacroOverlay(
     private val menu: () -> List<MacroMenuEntry>,
     private val onRun: (MacroPreset) -> Unit,
     private val onOpenSettings: () -> Unit,
+    /** Continuous zoom; null hides nothing but makes the zoom ring inert. */
+    private val zoom: ZoomDriver?,
 ) {
     private val windows = checkNotNull(context.getSystemService<WindowManager>())
     private val density = context.resources.displayMetrics.density
@@ -52,7 +56,16 @@ class FloatingMacroOverlay(
     }
     private val buttonParams = overlayParams(buttonSize, buttonSize, touchable = true)
 
-    private val radial = RadialMenuView(context).apply { onPick = ::pick }
+    private val radial = RadialMenuView(context).apply {
+        onTapRelease = { node, lock -> finish(node, lock, tapped = true) }
+        onHover = ::hover
+    }
+    private val labels = FloatingMacroLogic.MenuLabels(
+        zoom = context.getString(R.string.macro_menu_zoom),
+        zoomIn = context.getString(R.string.macro_menu_zoom_in),
+        zoomOut = context.getString(R.string.macro_menu_zoom_out),
+        settings = context.getString(R.string.macro_menu_settings),
+    )
     private val radialParams = overlayParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, touchable = false,
     ).apply { flags = flags or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS }
@@ -88,6 +101,7 @@ class FloatingMacroOverlay(
     }
 
     fun remove() {
+        zoom?.stop()
         closeRadial()
         if (shown) windows.removeView(button)
         shown = false
@@ -96,6 +110,7 @@ class FloatingMacroOverlay(
     /** Rotation or a fold: keep the button against an edge, with room for the fan. */
     fun onScreenChanged() {
         if (!shown) return
+        stopHeldZoom()
         closeRadial()
         val screen = screenSize()
         buttonParams.x = FloatingMacroLogic.snapX(buttonParams.x, buttonSize, screen.first)
@@ -103,12 +118,16 @@ class FloatingMacroOverlay(
         windows.updateViewLayout(button, buttonParams)
     }
 
-    fun render(tone: FloatingTone, camera: MacroCameraState, running: String?, note: String?) {
+    fun render(tone: FloatingTone, camera: MacroCameraState, running: String?, note: String?, zoomState: ZoomState?) {
         lastCamera = camera
         lastRunning = running
         lastNote = note
         val style = styleFor(tone)
-        button.text = context.getString(style.glyph)
+        button.text = if (tone == FloatingTone.ZOOMING && zoomState != null) {
+            context.getString(R.string.macro_glyph_zooming, if (zoomState.zoomIn) "+" else "−", zoomState.level)
+        } else {
+            context.getString(style.glyph)
+        }
         button.background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             setColor(style.color)
@@ -117,14 +136,8 @@ class FloatingMacroOverlay(
         if (radialShown) radial.update(items(), status())
     }
 
-    /** Presets first, settings last; a blocked preset is greyed but still sent, so the runner says why. */
-    private fun items(): List<RadialItem> {
-        val block = FloatingMacroLogic.blockReason(lastCamera, lastRunning)
-        return shownMenu.map { entry ->
-            RadialItem(entry.key, entry.preset.name, block == null,
-                FloatingMacroLogic.isCurrent(entry.preset, lastCamera))
-        } + RadialItem("⚙", context.getString(R.string.macro_menu_settings), enabled = true, current = false)
-    }
+    private fun items(): List<RadialNode> =
+        FloatingMacroLogic.buildMenu(shownMenu, lastCamera, lastRunning, labels)
 
     private fun status(): String? = FloatingMacroLogic.blockReason(lastCamera, lastRunning) ?: lastNote
 
@@ -147,6 +160,11 @@ class FloatingMacroOverlay(
         windows.updateViewLayout(radial, radialParams)
     }
 
+    /** A zoom held by the finger ends with the press; a latched one keeps going. */
+    private fun stopHeldZoom() {
+        if (zoom?.state?.value?.latched != true) zoom?.stop()
+    }
+
     private fun closeRadial() {
         if (!radialShown) return
         windows.removeView(radial)
@@ -154,12 +172,36 @@ class FloatingMacroOverlay(
         radialShown = false
     }
 
-    private fun pick(index: Int?) {
+    /** Press mode only: resting on a speed zooms at it; leaving a speed holds the zoom where it is. */
+    private fun hover(node: RadialNode?) {
+        if (radial.tapMode) return
+        val z = zoom ?: return
+        val action = node?.action
+        if (action is RadialAction.Zoom && node.enabled) {
+            z.hold(action.zoomIn, action.level)
+        } else if (z.state.value?.latched != true) {
+            z.pause()
+        }
+    }
+
+    /**
+     * The end of a press or a tap: run the leaf it ended on. A blocked preset is still sent, so
+     * the runner says why. Zoom stops unless it ended in the lock zone, or was a tapped speed.
+     */
+    private fun finish(node: RadialNode?, lock: Boolean, tapped: Boolean) {
+        val action = node?.action
+        if (action is RadialAction.Zoom && node.enabled && zoom != null) {
+            if (tapped) zoom.hold(action.zoomIn, action.level)
+            if (lock || tapped) zoom.latch() else zoom.stop()
+            closeRadial()
+            return
+        }
+        stopHeldZoom()
         closeRadial()
-        when {
-            index == null -> Unit
-            index < shownMenu.size -> onRun(shownMenu[index].preset)
-            else -> onOpenSettings()
+        when (action) {
+            is RadialAction.Preset -> onRun(action.preset)
+            RadialAction.Settings -> onOpenSettings()
+            else -> Unit
         }
     }
 
@@ -176,6 +218,8 @@ class FloatingMacroOverlay(
         private var startY = 0
         private var travelled = false
         private var moving = false
+        /** This press stopped a latched zoom; it does nothing else. */
+        private var stoppedZoom = false
         private val lift = Runnable {
             if (travelled) return@Runnable
             moving = true
@@ -186,6 +230,12 @@ class FloatingMacroOverlay(
         override fun onTouch(view: View, event: MotionEvent): Boolean {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    stoppedZoom = zoom?.state?.value?.latched == true
+                    if (stoppedZoom) {
+                        zoom?.stop()
+                        view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                        return true
+                    }
                     downX = event.rawX; downY = event.rawY
                     startX = buttonParams.x; startY = buttonParams.y
                     travelled = false
@@ -195,6 +245,7 @@ class FloatingMacroOverlay(
                     handler.postDelayed(lift, ViewConfiguration.getLongPressTimeout().toLong())
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    if (stoppedZoom) return true
                     val dx = event.rawX - downX
                     val dy = event.rawY - downY
                     if (!travelled && !FloatingMacroLogic.isTap(dx, dy, slop)) {
@@ -211,15 +262,21 @@ class FloatingMacroOverlay(
                 }
                 MotionEvent.ACTION_UP -> {
                     handler.removeCallbacks(lift)
+                    if (stoppedZoom) return true
                     when {
                         moving -> settle()
-                        travelled -> pick(if (radialShown) radial.track(event.rawX, event.rawY) else null)
+                        travelled -> {
+                            val node = if (radialShown) radial.track(event.rawX, event.rawY) else null
+                            finish(node, radial.inLockZone, tapped = false)
+                        }
                         // A still release is a click: the fan already open switches to tap mode.
                         else -> view.performClick()
                     }
                 }
                 MotionEvent.ACTION_CANCEL -> {
                     handler.removeCallbacks(lift)
+                    if (stoppedZoom) return true
+                    stopHeldZoom()
                     if (moving) settle() else closeRadial()
                 }
             }
@@ -236,7 +293,8 @@ class FloatingMacroOverlay(
         }
     }
 
-    private fun restY(y: Int): Int = RadialMenuLogic.restY(y, buttonSize, screenSize().second, radial.outer.toInt())
+    private fun restY(y: Int): Int =
+        RadialMenuLogic.restY(y, buttonSize, screenSize().second, radial.ringOneOuter.toInt())
 
     private fun buttonCenter(): Pair<Float, Float> {
         val at = IntArray(2)
@@ -251,6 +309,7 @@ class FloatingMacroOverlay(
         FloatingTone.READY -> ToneStyle(Color.argb(220, 33, 99, 186), R.string.macro_glyph_ready)
         FloatingTone.RECORDING -> ToneStyle(Color.argb(220, 150, 40, 40), R.string.macro_glyph_recording)
         FloatingTone.RUNNING -> ToneStyle(Color.argb(230, 214, 140, 20), R.string.macro_glyph_running)
+        FloatingTone.ZOOMING -> ToneStyle(Color.argb(235, 120, 60, 200), R.string.macro_glyph_running)
         FloatingTone.DONE -> ToneStyle(Color.argb(230, 40, 150, 70), R.string.macro_glyph_done)
         FloatingTone.FAILED -> ToneStyle(Color.argb(240, 200, 40, 40), R.string.macro_glyph_failed)
     }

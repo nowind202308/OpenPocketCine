@@ -13,6 +13,11 @@
     <string name="macro_glyph_failed">✕</string>
     <string name="macro_menu_row">%1$s　%2$s</string>
     <string name="macro_menu_settings">設定</string>
+    <string name="macro_menu_zoom">縮放</string>
+    <string name="macro_menu_zoom_in">放大</string>
+    <string name="macro_menu_zoom_out">縮小</string>
+    <string name="macro_zoom_lock">持續</string>
+    <string name="macro_glyph_zooming">%1$s%2$d</string>
     <string name="macro_channel_name">浮動巨集按鈕</string>
     <string name="macro_notification_title">浮動巨集按鈕運作中</string>
     <string name="macro_notification_idle">點浮動按鈕選擇設定組</string>
@@ -34,7 +39,7 @@
     <string name="macro_settings_allow">允許</string>
     <string name="macro_settings_done">已完成</string>
     <string name="macro_settings_presets">設定組（實體小鍵盤按鍵）</string>
-    <string name="macro_settings_usage">按住浮動按鈕往扇區方向拖曳、放開即套用，拖回按鈕上放開則取消。輕點按鈕會讓選單停留，再點扇區套用。長按不動約半秒可移動按鈕，放開會貼齊左右邊緣。成功震一下，失敗震三下。通知列的「停止」會關閉按鈕到下次開啟 App。</string>
+    <string name="macro_settings_usage">按住浮動按鈕往扇區方向拖曳、放開即套用；拖到有下一圈的格子會展開下一圈，在那裡放開則取消。縮放：拖到「縮放 → 放大或縮小 → 速度 1–7」，手指停在速度格上就持續變焦，滑到別格立即換速度，放開就停；推過速度格外側的「持續」區再放開，會一直變焦，點一下浮動按鈕停止。輕點按鈕會讓選單停留，可逐圈點選（點速度格即持續變焦）。長按不動約半秒可移動按鈕。成功震一下，失敗震三下。</string>
 
     <!-- Bluetooth control probe (fork). -->
     <string name="ble_probe_title">藍牙控制實驗</string>

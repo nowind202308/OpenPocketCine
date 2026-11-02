@@ -36,6 +36,8 @@ import com.opencapture.openpocketcine.macro.MacroSettingsActivity
 import com.opencapture.openpocketcine.macro.PocketPresets
 import com.opencapture.openpocketcine.macro.SessionBleProbe
 import com.opencapture.openpocketcine.macro.SessionMacroCamera
+import com.opencapture.openpocketcine.macro.SessionZoomPort
+import com.opencapture.openpocketcine.macro.ZoomDriver
 import com.opencapture.openpocketcine.macro.note
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
@@ -97,6 +99,8 @@ open class MainActivity : ComponentActivity() {
     private lateinit var macroAttachment: MacroAttachment
     /** Bluetooth control probe for the settings page: can a BLE-only controller change settings? */
     private lateinit var bleProbe: SessionBleProbe
+    /** Continuous zoom from the floating menu's 縮放 ring. */
+    private lateinit var macroZoom: ZoomDriver
     /** The overlay-permission hint shows once per activity, not on every reconnect. */
     private var macroPermissionHinted = false
     var hideSystemNavigation = false
@@ -128,7 +132,14 @@ open class MainActivity : ComponentActivity() {
             run = { macroRunner.run(it) },
         )
         // Keypad and floating menu share this runner, so only one preset is ever in flight.
-        macroAttachment = MacroAttachment({ currentPresets().menu }, macroCamera.state, macroRunner.running) { macroRunner.run(it) }
+        macroZoom = ZoomDriver(SessionZoomPort(model), macroScope)
+        macroAttachment = MacroAttachment(
+            { currentPresets().menu }, macroCamera.state, macroRunner.running, macroZoom,
+        ) { macroRunner.run(it) }
+        // A dropped link ends any floating zoom, latched or held.
+        macroScope.launch {
+            model.session.phaseFlow.collect { if (it != ConnectionPhase.LIVE) macroZoom.stop() }
+        }
         MacroHub.attach(macroAttachment)
         bleProbe = SessionBleProbe(model, macroScope) { macroRunner.isRunning }
         MacroHub.bleProbe = bleProbe
@@ -245,6 +256,7 @@ open class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         if (::remoteShutter.isInitialized) remoteShutter.close()
+        if (::macroZoom.isInitialized) macroZoom.stop()
         if (::macroAttachment.isInitialized) MacroHub.detach(macroAttachment)
         if (::bleProbe.isInitialized && MacroHub.bleProbe === bleProbe) MacroHub.bleProbe = null
         macroScope.cancel()

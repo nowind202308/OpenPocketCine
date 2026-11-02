@@ -21,6 +21,8 @@ class MacroAttachment(
     val menu: () -> List<MacroMenuEntry>,
     val camera: StateFlow<MacroCameraState>,
     val running: StateFlow<String?>,
+    /** Continuous zoom for the 縮放 ring; null where the camera cannot zoom. */
+    val zoom: ZoomDriver? = null,
     private val start: (MacroPreset) -> Boolean,
 ) {
     fun run(preset: MacroPreset): Boolean = start(preset)
