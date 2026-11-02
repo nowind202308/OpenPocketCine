@@ -77,7 +77,10 @@ jobs:
       # core links OpenCineMedia, OpenCineMotion, OpenCineRelay and OpenCineDJI from ../OpenCine: one
       # sibling checkout pinned by SHA in opencine-pins.txt. Works only once that remote exists.
       - name: Check out pinned OpenCine next to the repository
-        run: scripts/checkout-opencine.sh
+        # Fork: the pin may name a commit only this owner's OpenCine fork has.
+        env:
+          OPENCINE_BASE: ${{ github.server_url }}/${{ github.repository_owner }}
+        run: scripts/checkout-opencine.sh "$OPENCINE_BASE"
 
       # Release gate for tester notes (docs/tester-notes.md): fail before building when the
       # notes break the caps or an earlier successful upload already carried them.

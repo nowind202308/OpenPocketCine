@@ -64,7 +64,10 @@ jobs:
 
       # The app's release-note scripts delegate to the pinned shared validators.
       - name: Check out pinned OpenCine for shared metadata checks
-        run: scripts/checkout-opencine.sh
+        # Fork: the pin may name a commit only this owner's OpenCine fork has.
+        env:
+          OPENCINE_BASE: ${{ github.server_url }}/${{ github.repository_owner }}
+        run: scripts/checkout-opencine.sh "$OPENCINE_BASE"
 
       - name: Gitleaks
         # Digest-pinned for reproducibility. Update the version manually when needed. v8.30.1
@@ -228,7 +231,10 @@ jobs:
       # sibling checkout at ../OpenCine, pinned by SHA in opencine-pins.txt. Works only once that
       # repository is published. Delete when the app pins it by url + version.
       - name: Check out pinned OpenCine next to the repository
-        run: scripts/checkout-opencine.sh
+        # Fork: the pin may name a commit only this owner's OpenCine fork has.
+        env:
+          OPENCINE_BASE: ${{ github.server_url }}/${{ github.repository_owner }}
+        run: scripts/checkout-opencine.sh "$OPENCINE_BASE"
       - name: Xcode version for the cache key
         id: xcode
         run: echo "version=$(xcodebuild -version | awk 'NR == 1 { print $2 }')" >> "$GITHUB_OUTPUT"
@@ -353,7 +359,10 @@ jobs:
       - name: Install native tooling
         run: brew install just xcodegen || true
       - name: Check out pinned OpenCine next to the repository
-        run: scripts/checkout-opencine.sh
+        # Fork: the pin may name a commit only this owner's OpenCine fork has.
+        env:
+          OPENCINE_BASE: ${{ github.server_url }}/${{ github.repository_owner }}
+        run: scripts/checkout-opencine.sh "$OPENCINE_BASE"
       # OpenCine's scripts/ios-private-simulator.py: a new iPhone 16 Pro with accessibility enabled in
       # its own preference store only, the setup every app's conformance job shares.
       - name: Create a private simulator with accessibility enabled
@@ -420,7 +429,10 @@ jobs:
       # core links OpenCineMedia, OpenCineMotion, OpenCineRelay and OpenCineDJI from ../OpenCine: one
       # sibling checkout pinned by SHA in opencine-pins.txt. Works only once that remote exists.
       - name: Check out pinned OpenCine next to the repository
-        run: scripts/checkout-opencine.sh
+        # Fork: the pin may name a commit only this owner's OpenCine fork has.
+        env:
+          OPENCINE_BASE: ${{ github.server_url }}/${{ github.repository_owner }}
+        run: scripts/checkout-opencine.sh "$OPENCINE_BASE"
 
       # Do not use skiptools/swift-android-action: it references actions/cache@v5 and
       # reactivecircus/android-emulator-runner@v2, which SHA pinning rejects even when
@@ -461,6 +473,31 @@ jobs:
           set -euo pipefail
           read -ra tasks <<< "$TASKS"
           ./gradlew --init-script ../../scripts/ci-gradle-task-timing.gradle "${tasks[@]}"
+      # Fork: lint findings as annotations, so they are readable through the check-runs API
+      # without the job log. GitHub keeps at most 10 per level per step, hence three levels.
+      - name: Annotate lint findings
+        if: ${{ failure() && matrix.part == 'debug build and lint' }}
+        run: |
+          python3 - <<'PY'
+          import glob, os, xml.etree.ElementTree as ET
+          paths = glob.glob("Apps/Android/**/build/reports/lint-results*.xml", recursive=True)
+          paths += glob.glob("../OpenCine/Android/**/build/reports/lint-results*.xml", recursive=True)
+          root = os.getcwd()
+          found = []
+          for path in paths:
+              for issue in ET.parse(path).getroot().iter("issue"):
+                  loc = issue.find("location")
+                  file = loc.get("file", "") if loc is not None else ""
+                  if os.path.isabs(file):
+                      file = os.path.relpath(file, root)
+                  line = (loc.get("line") if loc is not None else None) or "1"
+                  text = f"[{issue.get('id')}] {issue.get('message', '')}".replace("\n", " ")
+                  found.append((file, line, text))
+          levels = ["error"] * 10 + ["warning"] * 10 + ["notice"] * 10
+          for (file, line, text), level in zip(found, levels):
+              print(f"::{level} file={file},line={line}::{text}")
+          print(f"{len(found)} lint findings in {len(paths)} reports")
+          PY
       # Fork: keep the debug APK so it can be sideloaded for hardware testing.
       - name: Upload debug APK
         # Also after a lint failure: the APK is already built by then.
