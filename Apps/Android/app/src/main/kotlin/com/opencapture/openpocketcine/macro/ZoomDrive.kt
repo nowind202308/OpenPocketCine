@@ -1,7 +1,5 @@
 package com.opencapture.openpocketcine.macro
 
-import kotlin.math.exp
-import kotlin.math.ln
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -11,66 +9,48 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-/** The camera side of continuous zoom: OpenCine's pinch path, which the app's two-finger zoom uses. */
+/**
+ * The camera side of continuous zoom: the camera's own held zoom, which ramps the lens itself at
+ * one of seven native speeds, so every speed moves smoothly.
+ */
 interface ZoomPort {
-    /** Zoom factor when a move starts (the pinch anchor). */
     fun currentFactor(): Double
 
     fun maxFactor(): Double
 
-    /** Magnification relative to the anchor; the session clamps and paces the writes. */
-    fun update(magnification: Double)
+    /**
+     * Starts or refreshes a held zoom at [level] 1..7. False when the camera side holds the write
+     * back for now (a D-Log2 body still hopping to D-Log, or the colour locked while recording).
+     */
+    fun rate(zoomIn: Boolean, level: Int): Boolean
 
-    /** Ends the move where it is (and lets a D-Log2 body restore its colour). */
-    fun end()
+    /** Stops the lens where it is (and lets a D-Log2 body restore its colour). */
+    fun stopRate()
 }
 
 /** A zoom set up in advance: direction and speed 1..7. */
 data class ZoomArm(val zoomIn: Boolean, val level: Int)
 
-/**
- * Speeds and the zoom step, Android-free. Level n takes [SECONDS_PER_DOUBLING]`[n-1]` seconds to
- * double (or halve) the zoom factor, so a level feels the same at 1× as at 6×.
- */
 object ZoomSpeeds {
-    val SECONDS_PER_DOUBLING = listOf(16.0, 10.0, 6.0, 4.0, 2.5, 1.5, 1.0)
+    /** The camera's native held-zoom speeds. */
     const val LEVELS = 7
-
-    fun ratePerSecond(level: Int): Double = ln(2.0) / SECONDS_PER_DOUBLING[level.coerceIn(1, LEVELS) - 1]
-
-    /**
-     * The next magnification after [dtSeconds], kept between 1× and [maxFactor] for a move that
-     * started at [anchor]. Returns the clamped value and whether it hit the end it moves toward.
-     */
-    fun step(
-        magnification: Double,
-        zoomIn: Boolean,
-        level: Int,
-        dtSeconds: Double,
-        anchor: Double,
-        maxFactor: Double,
-    ): Pair<Double, Boolean> {
-        val sign = if (zoomIn) 1.0 else -1.0
-        val next = magnification * exp(sign * ratePerSecond(level) * dtSeconds)
-        val lo = 1.0 / anchor.coerceAtLeast(1.0)
-        val hi = maxFactor.coerceAtLeast(1.0) / anchor.coerceAtLeast(1.0)
-        val clamped = next.coerceIn(lo, maxOf(lo, hi))
-        val atEnd = if (zoomIn) clamped >= hi - 1e-6 else clamped <= lo + 1e-6
-        return clamped to atEnd
-    }
 }
 
 /**
  * Zoom set up first, run on demand: the menu [arm]s a direction and speed without moving the
  * lens; a tap on the floating button or the keypad's zoom key [toggle]s the run. A run ends on
- * the next toggle, at the end of the range, or on [stop]; the arm stays for the next take until
- * [disarm].
+ * the next toggle, at the end of the range, after the camera keeps refusing it, or on [stop]; the
+ * arm stays for the next take until [disarm].
+ *
+ * While running, the held command is refreshed every [refreshMs] so the camera keeps moving.
  */
 class ZoomDriver(
     private val port: ZoomPort,
     private val scope: CoroutineScope,
-    private val tickMs: Long = 40,
+    private val refreshMs: Long = 120,
     private val now: () -> Long = System::currentTimeMillis,
+    /** How long refusals may last (a D-Log2 hop takes a moment) before the run gives up. */
+    private val refusalLimitMs: Long = 3_000,
 ) {
     private val _armed = MutableStateFlow<ZoomArm?>(null)
     private val _running = MutableStateFlow(false)
@@ -110,30 +90,34 @@ class ZoomDriver(
         job?.cancel()
         job = null
         _running.value = false
-        if (wasRunning) port.end()
+        if (wasRunning) port.stopRate()
+    }
+
+    private fun atEnd(arm: ZoomArm): Boolean {
+        val factor = port.currentFactor()
+        return if (arm.zoomIn) factor >= port.maxFactor() - END_SLACK else factor <= 1.0 + END_SLACK
     }
 
     private fun start(arm: ZoomArm) {
-        val anchor = port.currentFactor().coerceAtLeast(1.0)
-        var magnification = 1.0
-        var last = now()
         _running.value = true
         job = scope.launch {
+            var refusedSince: Long? = null
             while (isActive) {
-                delay(tickMs)
-                val t = now()
-                val dt = (t - last).coerceIn(0, 200) / 1000.0
-                last = t
-                val (next, atEnd) = ZoomSpeeds.step(magnification, arm.zoomIn, arm.level, dt, anchor, port.maxFactor())
-                if (next != magnification) {
-                    magnification = next
-                    port.update(magnification)
+                if (atEnd(arm)) break
+                if (port.rate(arm.zoomIn, arm.level)) {
+                    refusedSince = null
+                } else {
+                    val since = refusedSince ?: now().also { refusedSince = it }
+                    if (now() - since >= refusalLimitMs) break
                 }
-                if (atEnd) {
-                    stop()
-                    break
-                }
+                delay(refreshMs)
             }
+            if (isActive) stop()
         }
+    }
+
+    private companion object {
+        /** The reported factor settles a little short of the ends. */
+        const val END_SLACK = 0.02
     }
 }

@@ -3,7 +3,6 @@ package com.opencapture.openpocketcine.macro
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
-import kotlin.math.ln
 import kotlin.math.sin
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -196,80 +195,88 @@ class MenuBuildTest {
     }
 }
 
-class ZoomSpeedsTest {
-    @Test
-    fun levelsDoubleAtTheirStatedPace() {
-        assertTrue(abs(ZoomSpeeds.ratePerSecond(1) - ln(2.0) / 16) < 1e-12)
-        val (m, end) = ZoomSpeeds.step(1.0, zoomIn = true, level = 7, dtSeconds = 1.0, anchor = 1.0, maxFactor = 12.0)
-        assertTrue(abs(m - 2.0) < 1e-9)
-        assertFalse(end)
-        assertTrue(ZoomSpeeds.ratePerSecond(7) > ZoomSpeeds.ratePerSecond(6))
-    }
-
-    @Test
-    fun stepsClampAtBothEnds() {
-        // From 2×, max 4×: magnification tops out at 2.
-        val (up, upEnd) = ZoomSpeeds.step(1.9, zoomIn = true, level = 7, dtSeconds = 1.0, anchor = 2.0, maxFactor = 4.0)
-        assertEquals(2.0, up, 1e-9)
-        assertTrue(upEnd)
-        // Zooming out from 2× bottoms out at 1×, i.e. magnification 0.5.
-        val (down, downEnd) = ZoomSpeeds.step(0.6, zoomIn = false, level = 7, dtSeconds = 1.0, anchor = 2.0, maxFactor = 4.0)
-        assertEquals(0.5, down, 1e-9)
-        assertTrue(downEnd)
-    }
-}
-
-private class FakeZoomPort(var factor: Double = 1.0, val max: Double = 4.0) : ZoomPort {
-    val updates = mutableListOf<Double>()
-    var ends = 0
+private class FakeZoomPort(var factor: Double = 1.0, val max: Double = 4.0, var accept: Boolean = true) : ZoomPort {
+    val rates = mutableListOf<Pair<Boolean, Int>>()
+    var stops = 0
     override fun currentFactor() = factor
     override fun maxFactor() = max
-    override fun update(magnification: Double) { updates += magnification }
-    override fun end() { ends += 1 }
+    override fun rate(zoomIn: Boolean, level: Int): Boolean {
+        rates += zoomIn to level
+        return accept
+    }
+    override fun stopRate() { stops += 1 }
 }
 
 class ZoomDriverTest {
     private fun kotlinx.coroutines.test.TestScope.driver(port: FakeZoomPort) =
-        ZoomDriver(port, backgroundScope, tickMs = 10, now = { testScheduler.currentTime })
+        ZoomDriver(port, backgroundScope, refreshMs = 100, now = { testScheduler.currentTime }, refusalLimitMs = 1_000)
 
     @Test
     fun armingDoesNotMoveTheLens() = runTest {
         val port = FakeZoomPort()
         val z = driver(port)
         z.arm(zoomIn = true, level = 7)
-        delay(200)
-        assertTrue(port.updates.isEmpty())
+        delay(500)
+        assertTrue(port.rates.isEmpty())
         assertFalse(z.running.value)
         assertEquals(ZoomArm(true, 7), z.armed.value)
     }
 
     @Test
-    fun toggleRunsThenStopsAndTheArmStays() = runTest {
+    fun toggleHoldsTheNativeSpeedThenStopsAndTheArmStays() = runTest {
         val port = FakeZoomPort()
         val z = driver(port)
-        z.arm(zoomIn = true, level = 7)
+        z.arm(zoomIn = true, level = 4)
         assertTrue(z.toggle())
         assertTrue(z.running.value)
-        delay(300)
-        assertTrue(port.updates.last() > 1.1)
+        delay(450)
+        assertTrue(port.rates.size >= 4) // refreshed while running
+        assertTrue(port.rates.all { it == (true to 4) })
         assertTrue(z.toggle())
         assertFalse(z.running.value)
-        assertEquals(1, port.ends)
-        assertEquals(ZoomArm(true, 7), z.armed.value) // ready for the next take
-        val frozen = port.updates.size
-        delay(100)
-        assertEquals(frozen, port.updates.size)
+        assertEquals(1, port.stops)
+        assertEquals(ZoomArm(true, 4), z.armed.value) // ready for the next take
+        val frozen = port.rates.size
+        delay(500)
+        assertEquals(frozen, port.rates.size)
     }
 
     @Test
     fun aRunStopsItselfAtTheEndOfTheRange() = runTest {
-        val port = FakeZoomPort(factor = 3.9, max = 4.0)
+        val port = FakeZoomPort(factor = 3.0, max = 4.0)
         val z = driver(port)
         z.arm(zoomIn = true, level = 7)
         z.toggle()
-        delay(400)
+        delay(250)
+        assertTrue(z.running.value)
+        port.factor = 4.0
+        delay(250)
         assertFalse(z.running.value)
-        assertEquals(1, port.ends)
+        assertEquals(1, port.stops)
+    }
+
+    @Test
+    fun zoomingOutAtOneTimesStopsAtOnce() = runTest {
+        val port = FakeZoomPort(factor = 1.0)
+        val z = driver(port)
+        z.arm(zoomIn = false, level = 2)
+        z.toggle()
+        delay(50)
+        assertFalse(z.running.value)
+        assertTrue(port.rates.isEmpty())
+    }
+
+    @Test
+    fun aRunGivesUpWhenTheCameraKeepsRefusing() = runTest {
+        val port = FakeZoomPort(accept = false)
+        val z = driver(port)
+        z.arm(zoomIn = true, level = 3)
+        z.toggle()
+        delay(600)
+        assertTrue(z.running.value) // a D-Log2 hop may still clear
+        delay(800)
+        assertFalse(z.running.value)
+        assertEquals(1, port.stops)
     }
 
     @Test
@@ -278,18 +285,18 @@ class ZoomDriverTest {
         val z = driver(port)
         assertFalse(z.toggle())
         assertFalse(z.running.value)
-        assertEquals(0, port.ends)
+        assertEquals(0, port.stops)
     }
 
     @Test
     fun disarmStopsARunAndClears() = runTest {
-        val port = FakeZoomPort()
+        val port = FakeZoomPort(factor = 2.0)
         val z = driver(port)
         z.arm(zoomIn = false, level = 3)
         z.toggle()
         z.disarm()
         assertFalse(z.running.value)
         assertNull(z.armed.value)
-        assertEquals(1, port.ends)
+        assertEquals(1, port.stops)
     }
 }
