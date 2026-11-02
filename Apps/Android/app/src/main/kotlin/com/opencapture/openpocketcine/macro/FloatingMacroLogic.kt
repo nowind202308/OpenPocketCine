@@ -62,10 +62,15 @@ object FloatingMacroLogic {
         val zoomOut: String,
         val disarm: String,
         val settings: String,
+        val apply: String,
+        val original: String,
+        val fps: String,
     )
 
     /**
-     * Ring 1: the camera's presets, then 縮放, then settings. 縮放 opens 放大 / 縮小 (each with
+     * Ring 1: the camera's presets, then 縮放, then settings. Releasing on a preset runs it with
+     * its remembered choices; its ring 2 is 套用, ISO, EV, 幀率, and each function's ring 3 lists
+     * 原設定 then the values (the remembered one outlined). Releasing on a function cancels. 縮放 opens 放大 / 縮小 (each with
      * speeds 1..7, the armed one outlined) and 解除. Presets grey out while blocked (still sent,
      * so the runner says why); setting up zoom only needs a live camera, recording or not.
      */
@@ -75,15 +80,22 @@ object FloatingMacroLogic {
         running: String?,
         labels: MenuLabels,
         armed: ZoomArm? = null,
+        choices: (MacroPreset) -> MacroChoices = { MacroChoices() },
     ): List<RadialNode> {
         val block = blockReason(camera, running)
         val presets = menu.map { entry ->
+            val preset = entry.preset
+            val picked = choices(preset)
             RadialNode(
                 badge = entry.key,
-                label = entry.preset.name,
-                action = RadialAction.Preset(entry.preset),
+                label = preset.name,
+                action = RadialAction.Preset(preset),
                 enabled = block == null,
-                current = isCurrent(entry.preset, camera),
+                current = isCurrent(MacroChoiceLogic.apply(preset, picked), camera),
+                children = listOf(
+                    RadialNode(badge = "▶", label = labels.apply, action = RadialAction.Preset(preset),
+                        enabled = block == null),
+                ) + MacroFunction.entries.map { functionNode(preset, it, picked, camera, block == null, labels) },
             )
         }
         fun speeds(zoomIn: Boolean) = (1..ZoomSpeeds.LEVELS).map { level ->
@@ -104,6 +116,39 @@ object FloatingMacroLogic {
             ),
         )
         return presets + zoom + RadialNode(badge = "⚙", label = labels.settings, action = RadialAction.Settings)
+    }
+
+    private fun functionNode(
+        preset: MacroPreset,
+        function: MacroFunction,
+        picked: MacroChoices,
+        camera: MacroCameraState,
+        open: Boolean,
+        labels: MenuLabels,
+    ): RadialNode {
+        val applies = function != MacroFunction.EV || MacroChoiceLogic.evApplies(preset)
+        val enabled = open && applies
+        val chosen = picked.get(function)
+        return RadialNode(
+            badge = when (function) {
+                MacroFunction.ISO -> "ISO"
+                MacroFunction.EV -> "EV"
+                MacroFunction.FPS -> "fps"
+            },
+            label = MacroChoiceLogic.summary(preset, picked, function)
+                ?: if (function == MacroFunction.FPS) labels.fps else labels.original,
+            enabled = enabled,
+            current = chosen != null,
+            children = MacroChoiceLogic.options(preset, function, camera).map { option ->
+                RadialNode(
+                    badge = option.badge,
+                    label = if (option.value == null) labels.original else "",
+                    action = RadialAction.Choose(preset, function, option.value),
+                    enabled = enabled && option.enabled,
+                    current = chosen == option.value,
+                )
+            },
+        )
     }
 
     /** "+3" / "−5": direction and speed, on the button and the 縮放 sector. */

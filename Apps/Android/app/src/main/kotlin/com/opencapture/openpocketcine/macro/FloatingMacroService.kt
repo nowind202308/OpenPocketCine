@@ -85,6 +85,8 @@ class FloatingMacroService : Service() {
                 onRun = { attachment.run(it) },
                 onOpenSettings = ::openSettings,
                 zoom = attachment.zoom,
+                choices = attachment.choices,
+                onChoose = { preset, function, value -> attachment.choose(preset, function, value) },
             )
             view.show()
             overlay = view

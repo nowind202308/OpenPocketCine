@@ -23,9 +23,19 @@ class MacroAttachment(
     val running: StateFlow<String?>,
     /** Continuous zoom for the 縮放 ring; null where the camera cannot zoom. */
     val zoom: ZoomDriver? = null,
+    /** What the operator picked for a preset in the menu (ISO, EV, frame rate). */
+    val choices: (MacroPreset) -> MacroChoices = { MacroChoices() },
+    private val remember: (MacroPreset, MacroChoices) -> Unit = { _, _ -> },
+    /** Runs a preset with its remembered choices folded in. */
     private val start: (MacroPreset) -> Boolean,
 ) {
     fun run(preset: MacroPreset): Boolean = start(preset)
+
+    /** A ring-3 pick: remember it for [preset] (null forgets it), then apply the preset at once. */
+    fun choose(preset: MacroPreset, function: MacroFunction, value: Int?): Boolean {
+        remember(preset, choices(preset).with(function, value))
+        return run(preset)
+    }
 }
 
 /**

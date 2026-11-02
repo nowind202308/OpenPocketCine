@@ -17,6 +17,9 @@
     <string name="macro_menu_zoom_in">放大</string>
     <string name="macro_menu_zoom_out">縮小</string>
     <string name="macro_menu_zoom_disarm">解除</string>
+    <string name="macro_menu_apply">套用</string>
+    <string name="macro_menu_original">原設定</string>
+    <string name="macro_menu_fps">幀率</string>
     <string name="macro_zoom_not_armed">尚未設定縮放：先在浮動選單選「縮放 → 放大或縮小 → 速度」</string>
     <string name="macro_settings_keypad_zoom">0　啟動／停止已設定的縮放（數字鍵盤 0、F10 亦可）</string>
     <string name="macro_channel_name">浮動巨集按鈕</string>
@@ -40,7 +43,7 @@
     <string name="macro_settings_allow">允許</string>
     <string name="macro_settings_done">已完成</string>
     <string name="macro_settings_presets">設定組（實體小鍵盤按鍵）</string>
-    <string name="macro_settings_usage">按住浮動按鈕往扇區方向拖曳、放開即套用；拖到有下一圈的格子會展開下一圈，在那裡放開則取消。縮放採「先設定、再啟動」：選「縮放 → 放大或縮小 → 速度 1–7」只會待命，按鈕出現橘框與「+3」這類標記；拍攝時輕點按鈕開始變焦，再點一下停止，到達變焦極限也會自動停；停止後設定保留，可重複使用；「縮放 → 解除」取消待命。待命時要開選單請用拖曳。長按不動約半秒可移動按鈕。成功震一下，失敗震三下。</string>
+    <string name="macro_settings_usage">按住浮動按鈕往扇區方向拖曳、放開即套用；拖到有下一圈的格子會展開下一圈，在那裡放開則取消。預設組在第一圈放開即套用；再往外是「套用、ISO、EV、幀率」，在第三圈選值會記住並立即套用，之後小鍵盤 1–9 也會沿用；選「原設定」清除記憶。自動曝光的預設組 ISO 為上限，手動曝光為固定值，EV 只在自動曝光有效。縮放採「先設定、再啟動」：選「縮放 → 放大或縮小 → 速度 1–7」只會待命，按鈕出現橘框與「+3」這類標記；拍攝時輕點按鈕開始變焦，再點一下停止，到達變焦極限也會自動停；停止後設定保留，可重複使用；「縮放 → 解除」取消待命。待命時要開選單請用拖曳。長按不動約半秒可移動按鈕。成功震一下，失敗震三下。</string>
 
     <!-- Bluetooth control probe (fork). -->
     <string name="ble_probe_title">藍牙控制實驗</string>

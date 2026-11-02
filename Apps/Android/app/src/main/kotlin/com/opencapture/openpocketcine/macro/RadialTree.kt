@@ -18,9 +18,15 @@ sealed interface RadialAction {
 
     /** Clears the zoom set up above. */
     data object ZoomDisarm : RadialAction
+
+    /** Remembers [value] (null: back to the preset's own) for [function] of [preset], then runs it. */
+    data class Choose(val preset: MacroPreset, val function: MacroFunction, val value: Int?) : RadialAction
 }
 
-/** One sector. A node with [children] opens the next ring; releasing on it does nothing. */
+/**
+ * One sector. A node with [children] opens the next ring; releasing on it does nothing unless it
+ * also has an [action] (a preset: release on ring 1 runs it, going further sets its options).
+ */
 data class RadialNode(
     val badge: String,
     val label: String,

@@ -5,7 +5,7 @@ import android.content.SharedPreferences
 import android.provider.Settings
 import androidx.core.content.edit
 
-/** The floating button's own small preference file: on/off and where the operator left it. */
+/** The floating button's own small preference file: on/off, where the operator left it, menu choices. */
 object MacroPrefs {
     private const val FILE = "openpocketcine.macro"
     private const val FLOATING_ENABLED = "floatingEnabled"
@@ -34,5 +34,25 @@ object MacroPrefs {
 
     fun setButtonPosition(context: Context, x: Int, y: Int) {
         prefs(context).edit { putInt(BUTTON_X, x).putInt(BUTTON_Y, y) }
+    }
+
+    private fun choiceKey(preset: String, function: MacroFunction) = "choice.$preset.${function.name}"
+
+    /** ISO / EV / frame rate the operator picked for [preset] in the floating menu. */
+    fun choices(context: Context, preset: String): MacroChoices {
+        val p = prefs(context)
+        return MacroFunction.entries.fold(MacroChoices()) { acc, f ->
+            val key = choiceKey(preset, f)
+            if (p.contains(key)) acc.with(f, p.getInt(key, 0)) else acc
+        }
+    }
+
+    fun setChoices(context: Context, preset: String, choices: MacroChoices) {
+        prefs(context).edit {
+            MacroFunction.entries.forEach { f ->
+                val v = choices.get(f)
+                if (v == null) remove(choiceKey(preset, f)) else putInt(choiceKey(preset, f), v)
+            }
+        }
     }
 }

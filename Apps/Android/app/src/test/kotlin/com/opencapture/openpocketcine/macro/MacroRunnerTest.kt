@@ -44,6 +44,8 @@ private class FakeCamera(initial: MacroCameraState) : MacroCamera {
             is MacroStep.ExposureMode -> s.copy(expoMode = step.mode)
             is MacroStep.IsoCeiling -> s.copy(isoLimit = step.raw)
             is MacroStep.IsoFixed -> s.copy(isoIndex = step.index)
+            is MacroStep.Ev -> s.copy(evComp = EV_RAW_ZERO + step.thirds)
+            is MacroStep.FrameRate -> s.copy(fpsIndex = step.index)
         }
         after(step)
     }

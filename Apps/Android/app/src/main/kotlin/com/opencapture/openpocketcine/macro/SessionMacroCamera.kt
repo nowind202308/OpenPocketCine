@@ -1,6 +1,7 @@
 package com.opencapture.openpocketcine.macro
 
 import com.opencapture.opencine.vocabulary.ConnectionPhase
+import com.opencapture.opencine.vocabulary.VideoFormat
 import com.opencapture.openpocketcine.AppModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.SharingStarted
@@ -21,6 +22,15 @@ class SessionMacroCamera(private val model: AppModel, scope: CoroutineScope) : M
                 isoLimit = s.isoLimit,
                 isoIndex = s.isoIndex,
                 availableColorModes = s.availableColorModes,
+                evComp = s.evComp,
+                fpsIndex = s.fpsIndex,
+                // The same table the session checks a FORMAT SET against (Pocket 3 falls back to
+                // its known pairs when the camera sends none).
+                availableFps = VideoFormat
+                    .pickerFormats(s.availableVideoFormats, model.session.connectedCamera?.model, s.shootingMode)
+                    .filter { it.resolution.rawValue == s.resolutionCode }
+                    .map { it.frameRate.rawValue },
+                availableIsoIndices = s.availableIsoIndices,
             )
         }.stateIn(scope, SharingStarted.Eagerly, MacroCameraState())
 
@@ -31,6 +41,9 @@ class SessionMacroCamera(private val model: AppModel, scope: CoroutineScope) : M
             is MacroStep.ExposureMode -> model.setExpoMode(step.mode)
             is MacroStep.IsoCeiling -> model.setIsoLimit(step.raw)
             is MacroStep.IsoFixed -> model.setIsoIndex(step.index)
+            is MacroStep.Ev -> model.setEv(step.thirds)
+            is MacroStep.FrameRate ->
+                model.setResolutionFps(model.session.status.value.resolutionCode, step.index)
         }
     }
 

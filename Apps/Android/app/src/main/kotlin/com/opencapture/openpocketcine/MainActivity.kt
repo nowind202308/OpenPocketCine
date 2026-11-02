@@ -28,9 +28,11 @@ import com.opencapture.openpocketcine.diagnostics.AppDiagnostics
 import com.opencapture.openpocketcine.macro.FloatingMacroLogic
 import com.opencapture.openpocketcine.macro.FloatingMacroService
 import com.opencapture.openpocketcine.macro.MacroAttachment
+import com.opencapture.openpocketcine.macro.MacroChoiceLogic
 import com.opencapture.openpocketcine.macro.MacroHub
 import com.opencapture.openpocketcine.macro.MacroKeypad
 import com.opencapture.openpocketcine.macro.MacroPrefs
+import com.opencapture.openpocketcine.macro.MacroPreset
 import com.opencapture.openpocketcine.macro.MacroRunner
 import com.opencapture.openpocketcine.macro.MacroSettingsActivity
 import com.opencapture.openpocketcine.macro.PocketPresets
@@ -127,10 +129,15 @@ open class MainActivity : ComponentActivity() {
             },
         )
         macroZoom = ZoomDriver(SessionZoomPort(model), macroScope)
+        // Every trigger runs a preset with the ISO / EV / frame rate picked for it in the menu.
+        val macroChoices = { preset: MacroPreset -> MacroPrefs.choices(this, preset.name) }
+        val runMacro = { preset: MacroPreset ->
+            macroRunner.run(MacroChoiceLogic.apply(preset, macroChoices(preset)))
+        }
         macroKeypad = MacroKeypad(
             bindings = { currentPresets().bindings },
             isActive = { model.session.phase == ConnectionPhase.LIVE },
-            run = { macroRunner.run(it) },
+            run = { runMacro(it) },
             zoomKeys = setOf(KeyEvent.KEYCODE_0, KeyEvent.KEYCODE_NUMPAD_0, KeyEvent.KEYCODE_F10),
             toggleZoom = {
                 if (!macroZoom.toggle()) model.session.presentControlNote(getString(R.string.macro_zoom_not_armed))
@@ -138,8 +145,14 @@ open class MainActivity : ComponentActivity() {
         )
         // Keypad and floating menu share this runner, so only one preset is ever in flight.
         macroAttachment = MacroAttachment(
-            { currentPresets().menu }, macroCamera.state, macroRunner.running, macroZoom,
-        ) { macroRunner.run(it) }
+            menu = { currentPresets().menu },
+            camera = macroCamera.state,
+            running = macroRunner.running,
+            zoom = macroZoom,
+            choices = macroChoices,
+            remember = { preset, choices -> MacroPrefs.setChoices(this, preset.name, choices) },
+            start = runMacro,
+        )
         // A dropped link ends any floating zoom, latched or held.
         macroScope.launch {
             model.session.phaseFlow.collect { if (it != ConnectionPhase.LIVE) macroZoom.stop() }

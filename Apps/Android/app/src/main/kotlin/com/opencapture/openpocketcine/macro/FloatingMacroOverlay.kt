@@ -25,6 +25,8 @@ import com.opencapture.openpocketcine.R
  *
  * - Press and drag toward a sector, release: runs it (the press's own gesture, no aiming).
  *   Dragging onto a group opens its ring; releasing on a group, or back on the button, cancels.
+ * - A preset runs on ring 1; further out are 套用 / ISO / EV / 幀率, and a ring-3 value is
+ *   remembered for that preset and applied at once (keypad keys then use it too).
  * - 縮放 > 放大/縮小 > speed sets the zoom up without moving the lens (the button shows "+3").
  *   Then a tap on the button starts it and the next tap stops it; a press while it runs stops
  *   it at once. 縮放 > 解除 clears it.
@@ -42,6 +44,10 @@ class FloatingMacroOverlay(
     private val onOpenSettings: () -> Unit,
     /** Zoom set up from the menu and run on a tap; null makes the zoom ring inert. */
     private val zoom: ZoomDriver?,
+    /** Remembered ISO / EV / frame rate per preset, shown on rings 2 and 3. */
+    private val choices: (MacroPreset) -> MacroChoices = { MacroChoices() },
+    /** A ring-3 pick: remember it and apply the preset. */
+    private val onChoose: (MacroPreset, MacroFunction, Int?) -> Unit = { _, _, _ -> },
 ) {
     private val windows = checkNotNull(context.getSystemService<WindowManager>())
     private val density = context.resources.displayMetrics.density
@@ -66,6 +72,9 @@ class FloatingMacroOverlay(
         zoomOut = context.getString(R.string.macro_menu_zoom_out),
         disarm = context.getString(R.string.macro_menu_zoom_disarm),
         settings = context.getString(R.string.macro_menu_settings),
+        apply = context.getString(R.string.macro_menu_apply),
+        original = context.getString(R.string.macro_menu_original),
+        fps = context.getString(R.string.macro_menu_fps),
     )
     private val radialParams = overlayParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, touchable = false,
@@ -139,7 +148,7 @@ class FloatingMacroOverlay(
     }
 
     private fun items(): List<RadialNode> =
-        FloatingMacroLogic.buildMenu(shownMenu, lastCamera, lastRunning, labels, zoom?.armed?.value)
+        FloatingMacroLogic.buildMenu(shownMenu, lastCamera, lastRunning, labels, zoom?.armed?.value, choices)
 
     private fun status(): String? = FloatingMacroLogic.blockReason(lastCamera, lastRunning) ?: lastNote
 
@@ -180,6 +189,7 @@ class FloatingMacroOverlay(
             RadialAction.Settings -> onOpenSettings()
             is RadialAction.Zoom -> if (node.enabled) zoom?.arm(action.zoomIn, action.level)
             RadialAction.ZoomDisarm -> zoom?.disarm()
+            is RadialAction.Choose -> if (node.enabled) onChoose(action.preset, action.function, action.value)
             null -> Unit
         }
     }

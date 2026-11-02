@@ -13,7 +13,7 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 
-private val labels = FloatingMacroLogic.MenuLabels("縮放", "放大", "縮小", "解除", "設定")
+private val labels = FloatingMacroLogic.MenuLabels("縮放", "放大", "縮小", "解除", "設定", "套用", "原設定", "幀率")
 private val live = MacroCameraState(live = true, colorMode = 0x17, zoomFactor = 1.0, expoMode = 0x01)
 private val presets = listOf(
     MacroMenuEntry("1", MacroPreset("A", listOf(MacroStep.ExposureMode(0x01)))),
@@ -94,13 +94,25 @@ class RadialTrackerTest {
     }
 
     @Test
-    fun aLeafOnRingOneStaysSelectedPastItsEdge() {
+    fun aPresetRunsOnRingOneAndGoingFurtherOpensItsFunctions() {
         val t = tracker()
         val a = t.centerOf(0, 0)
         t.at(a, 100f)
-        t.at(a, 260f) // overshoot: a quick flick still means this preset
         assertEquals(listOf(0), t.path)
         assertIs<RadialAction.Preset>(t.hovered!!.action)
+        t.at(a, 180f) // past ring 1: the preset's ISO / EV / 幀率 ring
+        assertEquals(0, t.path.first())
+        assertEquals(2, t.path.size)
+    }
+
+    @Test
+    fun aLeafOnRingOneStaysSelectedPastItsEdge() {
+        val t = tracker()
+        val a = t.centerOf(0, 4) // 設定 is a plain leaf
+        t.at(a, 100f)
+        t.at(a, 260f) // overshoot: a quick flick still means this entry
+        assertEquals(listOf(4), t.path)
+        assertEquals(RadialAction.Settings, t.hovered!!.action)
     }
 
     @Test

@@ -38,6 +38,16 @@ sealed interface MacroStep {
     data class IsoFixed(val index: Int) : MacroStep {
         override val label get() = "ISO"
     }
+
+    /** Exposure compensation in thirds of a stop (±9). Only acts in Auto exposure. */
+    data class Ev(val thirds: Int) : MacroStep {
+        override val label get() = "EV"
+    }
+
+    /** Frame rate as a `VideoFrameRate` index, at the camera's current resolution. */
+    data class FrameRate(val index: Int) : MacroStep {
+        override val label get() = "幀率"
+    }
 }
 
 /** A named, ordered list of writes bound to one key. Order matters: zoom before color, Auto before ISO ceiling. */
@@ -54,6 +64,14 @@ data class MacroCameraState(
     val isoIndex: Int = -1,
     /** Legal color codes the camera advertised; empty until it does. */
     val availableColorModes: List<Int> = emptyList(),
+    /** `cam_expo_param` EV raw (`0x10` = 0). */
+    val evComp: Int = -1,
+    /** `VideoFrameRate` index. */
+    val fpsIndex: Int = -1,
+    /** Frame-rate indices the camera offers at its current resolution; empty until it says. */
+    val availableFps: List<Int> = emptyList(),
+    /** Legal fixed ISO indices; empty until the camera says. */
+    val availableIsoIndices: List<Int> = emptyList(),
 )
 
 /** What the runner drives. The app implements it over the live session. */
@@ -79,11 +97,18 @@ internal fun MacroStep.isSatisfiedBy(s: MacroCameraState): Boolean = when (this)
     is MacroStep.ExposureMode -> s.expoMode == mode
     is MacroStep.IsoCeiling -> s.isoLimit == raw
     is MacroStep.IsoFixed -> s.isoIndex == index
+    is MacroStep.Ev -> s.evComp == EV_RAW_ZERO + thirds
+    is MacroStep.FrameRate -> s.fpsIndex == index
 }
+
+/** `EvComp.rawValue` of 0 EV. */
+internal const val EV_RAW_ZERO = 0x10
 
 /** Null when the camera can take [step]; otherwise why not, for the on-screen note. */
 internal fun MacroStep.unsupportedReason(s: MacroCameraState): String? = when (this) {
     is MacroStep.ColorMode ->
         if (s.availableColorModes.isNotEmpty() && mode !in s.availableColorModes) "相機目前不提供此色彩模式" else null
+    is MacroStep.FrameRate ->
+        if (index !in s.availableFps) "相機目前不提供此幀率" else null
     else -> null
 }
