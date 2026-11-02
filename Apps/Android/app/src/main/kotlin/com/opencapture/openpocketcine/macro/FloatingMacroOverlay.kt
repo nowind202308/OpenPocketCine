@@ -1,5 +1,6 @@
 package com.opencapture.openpocketcine.macro
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -67,6 +68,12 @@ class FloatingMacroOverlay(
     init {
         // A tap (or TalkBack's click) leaves the fan open; the press already drew it.
         button.setOnClickListener { if (radialShown && radial.tapMode) closeRadial() else openRadial(tapMode = true) }
+        attachPressListener()
+    }
+
+    /** [PressListener] calls `performClick()` on a still release, so taps and TalkBack agree. */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun attachPressListener() {
         button.setOnTouchListener(PressListener())
     }
 

@@ -483,6 +483,7 @@ jobs:
           paths = glob.glob("Apps/Android/**/build/reports/lint-results*.xml", recursive=True)
           paths += glob.glob("../OpenCine/Android/**/build/reports/lint-results*.xml", recursive=True)
           root = os.getcwd()
+          RANK = {"Fatal": 0, "Error": 1, "Warning": 2, "Information": 3, "Hint": 4}
           found = []
           for path in paths:
               for issue in ET.parse(path).getroot().iter("issue"):
@@ -491,8 +492,11 @@ jobs:
                   if os.path.isabs(file):
                       file = os.path.relpath(file, root)
                   line = (loc.get("line") if loc is not None else None) or "1"
-                  text = f"[{issue.get('id')}] {issue.get('message', '')}".replace("\n", " ")
-                  found.append((file, line, text))
+                  severity = issue.get("severity", "")
+                  text = f"{severity} [{issue.get('id')}] {issue.get('message', '')}".replace("\n", " ")
+                  found.append((RANK.get(severity, 9), file, line, text))
+          # What fails the build first: warningsAsErrors makes every Warning an error too.
+          found = [(f, l, t) for _, f, l, t in sorted(found, key=lambda x: x[0])]
           levels = ["error"] * 10 + ["warning"] * 10 + ["notice"] * 10
           for (file, line, text), level in zip(found, levels):
               print(f"::{level} file={file},line={line}::{text}")
