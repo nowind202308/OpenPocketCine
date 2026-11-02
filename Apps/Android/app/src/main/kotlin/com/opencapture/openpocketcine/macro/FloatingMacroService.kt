@@ -90,10 +90,11 @@ class FloatingMacroService : Service() {
             overlay = view
             scope.launch { MacroHub.results.collect { onResult(it) } }.also { results ->
                 try {
-                    val zoomState = attachment.zoom?.state ?: noZoom
-                    combine(attachment.camera, attachment.running, flash, zoomState) { camera, running, flashed, zoom ->
-                        RenderFrame(camera, running, zoom, FloatingMacroLogic.tone(camera, running, flashed, zoom))
-                    }.collect { f -> view.render(f.tone, f.camera, f.running, lastNote, f.zoom) }
+                    val armed = attachment.zoom?.armed ?: noArm
+                    val zooming = attachment.zoom?.running ?: notZooming
+                    combine(attachment.camera, attachment.running, flash, armed, zooming) { camera, running, flashed, arm, z ->
+                        RenderFrame(camera, running, arm, FloatingMacroLogic.tone(camera, running, flashed, z, arm))
+                    }.collect { f -> view.render(f.tone, f.camera, f.running, lastNote, f.armed) }
                 } finally {
                     results.cancel()
                 }
@@ -189,13 +190,14 @@ class FloatingMacroService : Service() {
     private class RenderFrame(
         val camera: MacroCameraState,
         val running: String?,
-        val zoom: ZoomState?,
+        val armed: ZoomArm?,
         val tone: FloatingTone,
     )
 
     companion object {
-        /** Stands in for a camera without zoom, so the render loop has one shape. */
-        private val noZoom: StateFlow<ZoomState?> = MutableStateFlow(null)
+        /** Stand in for a camera without zoom, so the render loop has one shape. */
+        private val noArm: StateFlow<ZoomArm?> = MutableStateFlow(null)
+        private val notZooming: StateFlow<Boolean> = MutableStateFlow(false)
         private const val TAG = "OpenPocketCineMacro"
         private const val CHANNEL_ID = "floating_macro"
         private const val NOTIFICATION_ID = 0x4D41

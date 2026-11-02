@@ -134,6 +134,7 @@ class MacroSettingsActivity : ComponentActivity() {
                         style = MaterialTheme.typography.bodyLarge)
                 }
             }
+            Text(stringResource(R.string.macro_settings_keypad_zoom), style = MaterialTheme.typography.bodyLarge)
             Text(stringResource(R.string.macro_settings_usage), style = MaterialTheme.typography.bodyMedium)
             HorizontalDivider()
             BleProbeSection()

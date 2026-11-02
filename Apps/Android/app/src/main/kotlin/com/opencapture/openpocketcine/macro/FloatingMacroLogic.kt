@@ -3,7 +3,7 @@ package com.opencapture.openpocketcine.macro
 import kotlin.math.max
 
 /** What the floating button shows; the view maps each to a color and a glyph. */
-enum class FloatingTone { OFFLINE, READY, RECORDING, RUNNING, ZOOMING, DONE, FAILED }
+enum class FloatingTone { OFFLINE, READY, RECORDING, RUNNING, ARMED, ZOOMING, DONE, FAILED }
 
 /** How a finished run is felt: the tone to flash and a vibration waveform (off/on ms pairs). */
 data class FloatingFeedback(val tone: FloatingTone, val vibration: List<Long>)
@@ -30,17 +30,22 @@ object FloatingMacroLogic {
         else -> null
     }
 
-    /** A run in progress wins, then a latched zoom, then a fresh result flash, then the camera. */
+    /**
+     * A preset run wins, then a running zoom, then a fresh result flash, then an armed zoom
+     * (only on a live camera), then the camera's own state.
+     */
     fun tone(
         camera: MacroCameraState,
         running: String?,
         flash: FloatingTone?,
-        zoom: ZoomState? = null,
+        zoomRunning: Boolean = false,
+        armed: ZoomArm? = null,
     ): FloatingTone = when {
         running != null -> FloatingTone.RUNNING
-        zoom?.latched == true -> FloatingTone.ZOOMING
+        zoomRunning -> FloatingTone.ZOOMING
         flash != null -> flash
         !camera.live -> FloatingTone.OFFLINE
+        armed != null -> FloatingTone.ARMED
         camera.recording -> FloatingTone.RECORDING
         else -> FloatingTone.READY
     }
@@ -51,18 +56,25 @@ object FloatingMacroLogic {
     }
 
     /** Words the menu needs from resources, so the tree builds on the JVM. */
-    data class MenuLabels(val zoom: String, val zoomIn: String, val zoomOut: String, val settings: String)
+    data class MenuLabels(
+        val zoom: String,
+        val zoomIn: String,
+        val zoomOut: String,
+        val disarm: String,
+        val settings: String,
+    )
 
     /**
-     * Ring 1: the camera's presets, then 縮放, then settings. 縮放 opens 放大 / 縮小, each with
-     * speeds 1..7. Presets grey out while blocked (still sent, so the runner says why); zoom
-     * only needs a live camera, so it works while recording.
+     * Ring 1: the camera's presets, then 縮放, then settings. 縮放 opens 放大 / 縮小 (each with
+     * speeds 1..7, the armed one outlined) and 解除. Presets grey out while blocked (still sent,
+     * so the runner says why); setting up zoom only needs a live camera, recording or not.
      */
     fun buildMenu(
         menu: List<MacroMenuEntry>,
         camera: MacroCameraState,
         running: String?,
         labels: MenuLabels,
+        armed: ZoomArm? = null,
     ): List<RadialNode> {
         val block = blockReason(camera, running)
         val presets = menu.map { entry ->
@@ -75,17 +87,27 @@ object FloatingMacroLogic {
             )
         }
         fun speeds(zoomIn: Boolean) = (1..ZoomSpeeds.LEVELS).map { level ->
-            RadialNode(badge = "$level", label = "", action = RadialAction.Zoom(zoomIn, level), enabled = camera.live)
+            RadialNode(
+                badge = "$level", label = "", action = RadialAction.Zoom(zoomIn, level),
+                enabled = camera.live, current = armed == ZoomArm(zoomIn, level),
+            )
         }
         val zoom = RadialNode(
-            badge = "±", label = labels.zoom, enabled = camera.live,
+            badge = armed?.let { zoomBadge(it) } ?: "±", label = labels.zoom, enabled = camera.live,
+            current = armed != null,
             children = listOf(
-                RadialNode(badge = "+", label = labels.zoomIn, enabled = camera.live, children = speeds(true)),
-                RadialNode(badge = "−", label = labels.zoomOut, enabled = camera.live, children = speeds(false)),
+                RadialNode(badge = "+", label = labels.zoomIn, enabled = camera.live, children = speeds(true),
+                    current = armed?.zoomIn == true),
+                RadialNode(badge = "−", label = labels.zoomOut, enabled = camera.live, children = speeds(false),
+                    current = armed?.zoomIn == false),
+                RadialNode(badge = "✕", label = labels.disarm, action = RadialAction.ZoomDisarm, enabled = armed != null),
             ),
         )
         return presets + zoom + RadialNode(badge = "⚙", label = labels.settings, action = RadialAction.Settings)
     }
+
+    /** "+3" / "−5": direction and speed, on the button and the 縮放 sector. */
+    fun zoomBadge(arm: ZoomArm): String = (if (arm.zoomIn) "+" else "−") + arm.level
 
     /** True when the camera already matches every step: the menu marks that row as current. */
     fun isCurrent(preset: MacroPreset, camera: MacroCameraState): Boolean =

@@ -12,7 +12,6 @@ import android.util.TypedValue
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
-import com.opencapture.openpocketcine.R
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.max
@@ -29,10 +28,7 @@ import kotlin.math.sin
  */
 class RadialMenuView(context: Context) : View(context) {
     /** Tap mode: a release on a leaf or outside the menu; null node closes. */
-    var onTapRelease: (RadialNode?, Boolean) -> Unit = { _, _ -> }
-
-    /** Every change of the selected node (for zoom held while the finger rests on a speed). */
-    var onHover: (RadialNode?) -> Unit = {}
+    var onTapRelease: (RadialNode?) -> Unit = {}
 
     var tapMode = false
 
@@ -49,7 +45,6 @@ class RadialMenuView(context: Context) : View(context) {
     val ringOneOuter: Float get() = RadialTracker.ringRadii(density).bands.first().second
 
     val hovered: RadialNode? get() = tracker?.hovered
-    val inLockZone: Boolean get() = tracker?.inLockZone == true
 
     private val wedge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
@@ -75,7 +70,6 @@ class RadialMenuView(context: Context) : View(context) {
         color = Color.argb(230, 235, 70, 60)
         pathEffect = DashPathEffect(floatArrayOf(10 * density, 7 * density), 0f)
     }
-    private val lockLabel = context.getString(R.string.macro_zoom_lock)
     private val path = Path()
     private val outerRect = RectF()
     private val innerRect = RectF()
@@ -109,15 +103,7 @@ class RadialMenuView(context: Context) : View(context) {
         val x = rawX - location[0]
         val y = rawY - location[1]
         finger = x to y
-        val wasLocked = t.inLockZone
-        val before = t.hovered
-        if (t.move(x, y)) {
-            val now = t.hovered
-            if (now != null && (now !== before || t.inLockZone != wasLocked)) {
-                performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-            }
-            if (now !== before) onHover(now)
-        }
+        if (t.move(x, y) && t.hovered != null) performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
         invalidate()
         return t.hovered
     }
@@ -130,9 +116,9 @@ class RadialMenuView(context: Context) : View(context) {
                 val node = track(event.rawX, event.rawY)
                 performClick()
                 // A group opens its ring and keeps the menu up; anything else is final.
-                if (node?.isGroup != true) onTapRelease(node, inLockZone)
+                if (node?.isGroup != true) onTapRelease(node)
             }
-            MotionEvent.ACTION_CANCEL -> onTapRelease(null, false)
+            MotionEvent.ACTION_CANCEL -> onTapRelease(null)
         }
         return true
     }
@@ -192,7 +178,6 @@ class RadialMenuView(context: Context) : View(context) {
                 canvas.drawPath(path, ring)
             }
             drawLabel(canvas, t, s)
-            if (s.selected && s.node.action is RadialAction.Zoom) drawLock(canvas, t, s)
         }
         finger?.let { (fx, fy) -> if (!tapMode) canvas.drawLine(t.cx, t.cy, fx, fy, trail) }
         drawStatus(canvas, t)
@@ -215,30 +200,6 @@ class RadialMenuView(context: Context) : View(context) {
             canvas.drawText(line, x, baseline, namePaint)
             baseline += lineHeight
         }
-    }
-
-    /** The lock zone past a held zoom speed: releasing there keeps zooming. */
-    private fun drawLock(canvas: Canvas, t: RadialTracker, s: SectorShape) {
-        val inner = t.radii.lockStart
-        val outer = inner + 34 * density
-        outerRect.set(t.cx - outer, t.cy - outer, t.cx + outer, t.cy + outer)
-        innerRect.set(t.cx - inner, t.cy - inner, t.cx + inner, t.cy + inner)
-        val start = Math.toDegrees(s.center - s.sweep / 2).toFloat()
-        val sweep = Math.toDegrees(s.sweep).toFloat()
-        path.reset()
-        path.arcTo(outerRect, start, sweep, true)
-        path.arcTo(innerRect, start + sweep, -sweep)
-        path.close()
-        wedge.color = if (t.inLockZone) LOCK_ON else LOCK_OFF
-        canvas.drawPath(path, wedge)
-        val mid = (inner + outer) / 2
-        namePaint.alpha = 255
-        canvas.drawText(
-            lockLabel,
-            t.cx + mid * cos(s.center).toFloat(),
-            t.cy + mid * sin(s.center).toFloat() - (namePaint.ascent() + namePaint.descent()) / 2,
-            namePaint,
-        )
     }
 
     /** Words onto lines that fit the sector's arc, at most three; CJK labels break per character. */
@@ -281,7 +242,5 @@ class RadialMenuView(context: Context) : View(context) {
         val HOVER = Color.argb(240, 33, 110, 210)
         val HOVER_DISABLED = Color.argb(230, 90, 90, 100)
         val CURRENT = Color.argb(255, 70, 190, 100)
-        val LOCK_OFF = Color.argb(170, 60, 60, 70)
-        val LOCK_ON = Color.argb(240, 214, 140, 20)
     }
 }

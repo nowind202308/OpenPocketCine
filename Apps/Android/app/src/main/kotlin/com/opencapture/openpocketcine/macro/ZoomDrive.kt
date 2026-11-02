@@ -25,8 +25,8 @@ interface ZoomPort {
     fun end()
 }
 
-/** What the floating button shows while zoom runs. */
-data class ZoomState(val zoomIn: Boolean, val level: Int, val latched: Boolean)
+/** A zoom set up in advance: direction and speed 1..7. */
+data class ZoomArm(val zoomIn: Boolean, val level: Int)
 
 /**
  * Speeds and the zoom step, Android-free. Level n takes [SECONDS_PER_DOUBLING]`[n-1]` seconds to
@@ -61,12 +61,10 @@ object ZoomSpeeds {
 }
 
 /**
- * Drives continuous zoom from the radial menu.
- *
- * - [hold] while the finger rests on a speed sector (changing sector changes speed live);
- * - [pause] when it leaves for a non-speed sector: the move stays open but stops changing;
- * - [stop] on an ordinary release, which ends the move;
- * - [latch] on a release in the lock zone: it keeps zooming until [stop] or the end of the range.
+ * Zoom set up first, run on demand: the menu [arm]s a direction and speed without moving the
+ * lens; a tap on the floating button or the keypad's zoom key [toggle]s the run. A run ends on
+ * the next toggle, at the end of the range, or on [stop]; the arm stays for the next take until
+ * [disarm].
  */
 class ZoomDriver(
     private val port: ZoomPort,
@@ -74,62 +72,64 @@ class ZoomDriver(
     private val tickMs: Long = 40,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
-    private val _state = MutableStateFlow<ZoomState?>(null)
+    private val _armed = MutableStateFlow<ZoomArm?>(null)
+    private val _running = MutableStateFlow(false)
 
-    /** Null when no move is open, or paused. */
-    val state: StateFlow<ZoomState?> = _state.asStateFlow()
+    /** What a toggle will run; null when nothing is set up. */
+    val armed: StateFlow<ZoomArm?> = _armed.asStateFlow()
+
+    /** The lens is moving. */
+    val running: StateFlow<Boolean> = _running.asStateFlow()
 
     private var job: Job? = null
-    private var anchor = 1.0
-    private var magnification = 1.0
-    private var moving: ZoomState? = null
-    private var open = false
 
-    fun hold(zoomIn: Boolean, level: Int) {
-        if (!open) begin()
-        moving = ZoomState(zoomIn, level, latched = false)
-        _state.value = moving
+    fun arm(zoomIn: Boolean, level: Int) {
+        stop()
+        _armed.value = ZoomArm(zoomIn, level.coerceIn(1, ZoomSpeeds.LEVELS))
     }
 
-    fun pause() {
-        moving = null
-        _state.value = null
+    fun disarm() {
+        stop()
+        _armed.value = null
     }
 
-    fun latch() {
-        val m = moving ?: return stop()
-        moving = m.copy(latched = true)
-        _state.value = moving
+    /** Starts the armed zoom, or stops a running one. False when nothing is armed. */
+    fun toggle(): Boolean {
+        if (_running.value) {
+            stop()
+            return true
+        }
+        val arm = _armed.value ?: return false
+        start(arm)
+        return true
     }
 
+    /** Ends a run where it is; the arm stays. */
     fun stop() {
+        val wasRunning = job != null
         job?.cancel()
         job = null
-        moving = null
-        _state.value = null
-        if (open) port.end()
-        open = false
+        _running.value = false
+        if (wasRunning) port.end()
     }
 
-    private fun begin() {
-        open = true
-        anchor = port.currentFactor().coerceAtLeast(1.0)
-        magnification = 1.0
+    private fun start(arm: ZoomArm) {
+        val anchor = port.currentFactor().coerceAtLeast(1.0)
+        var magnification = 1.0
         var last = now()
+        _running.value = true
         job = scope.launch {
             while (isActive) {
                 delay(tickMs)
                 val t = now()
                 val dt = (t - last).coerceIn(0, 200) / 1000.0
                 last = t
-                val m = moving ?: continue
-                val (next, atEnd) = ZoomSpeeds.step(magnification, m.zoomIn, m.level, dt, anchor, port.maxFactor())
+                val (next, atEnd) = ZoomSpeeds.step(magnification, arm.zoomIn, arm.level, dt, anchor, port.maxFactor())
                 if (next != magnification) {
                     magnification = next
                     port.update(magnification)
                 }
-                // A held move rests at the end until released; a latched one is done.
-                if (atEnd && m.latched) {
+                if (atEnd) {
                     stop()
                     break
                 }

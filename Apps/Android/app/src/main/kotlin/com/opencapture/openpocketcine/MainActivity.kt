@@ -126,13 +126,17 @@ open class MainActivity : ComponentActivity() {
                 MacroHub.report(it)
             },
         )
+        macroZoom = ZoomDriver(SessionZoomPort(model), macroScope)
         macroKeypad = MacroKeypad(
             bindings = { currentPresets().bindings },
             isActive = { model.session.phase == ConnectionPhase.LIVE },
             run = { macroRunner.run(it) },
+            zoomKeys = setOf(KeyEvent.KEYCODE_0, KeyEvent.KEYCODE_NUMPAD_0, KeyEvent.KEYCODE_F10),
+            toggleZoom = {
+                if (!macroZoom.toggle()) model.session.presentControlNote(getString(R.string.macro_zoom_not_armed))
+            },
         )
         // Keypad and floating menu share this runner, so only one preset is ever in flight.
-        macroZoom = ZoomDriver(SessionZoomPort(model), macroScope)
         macroAttachment = MacroAttachment(
             { currentPresets().menu }, macroCamera.state, macroRunner.running, macroZoom,
         ) { macroRunner.run(it) }

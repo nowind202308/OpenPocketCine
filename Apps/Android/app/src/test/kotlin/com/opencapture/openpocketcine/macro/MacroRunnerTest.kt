@@ -161,6 +161,16 @@ class MacroKeypadTest {
     }
 
     @Test
+    fun zoomKeyTogglesOncePerPress() {
+        var toggles = 0
+        val keypad = MacroKeypad({ emptyMap() }, isActive = { true }, run = {}, zoomKeys = setOf(7)) { toggles += 1 }
+        assertTrue(keypad.onKey(7, MacroKeypad.ACTION_DOWN, 0))
+        assertTrue(keypad.onKey(7, MacroKeypad.ACTION_DOWN, 1))
+        assertTrue(keypad.onKey(7, 1, 0))
+        assertEquals(1, toggles)
+    }
+
+    @Test
     fun passesKeysThroughWhenNotLive() {
         val fired = mutableListOf<MacroPreset>()
         val keypad = MacroKeypad({ mapOf(8 to preset) }, isActive = { false }, run = { fired += it })

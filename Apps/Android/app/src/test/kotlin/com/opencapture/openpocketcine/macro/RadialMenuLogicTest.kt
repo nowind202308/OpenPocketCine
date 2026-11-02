@@ -14,7 +14,7 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 
-private val labels = FloatingMacroLogic.MenuLabels("縮放", "放大", "縮小", "設定")
+private val labels = FloatingMacroLogic.MenuLabels("縮放", "放大", "縮小", "解除", "設定")
 private val live = MacroCameraState(live = true, colorMode = 0x17, zoomFactor = 1.0, expoMode = 0x01)
 private val presets = listOf(
     MacroMenuEntry("1", MacroPreset("A", listOf(MacroStep.ExposureMode(0x01)))),
@@ -50,7 +50,7 @@ class RadialTrackerTest {
         t.at(t.centerOf(0, 3), 100f)
         assertEquals(listOf(3), t.path)
         assertTrue(t.hovered!!.isGroup)
-        assertEquals(5 + 2, t.sectors().size) // 放大 / 縮小 appear
+        assertEquals(5 + 3, t.sectors().size) // 放大 / 縮小 / 解除 appear
     }
 
     @Test
@@ -59,7 +59,7 @@ class RadialTrackerTest {
         t.at(t.centerOf(0, 3), 100f)
         t.at(t.centerOf(1, 0), 180f)
         assertEquals(listOf(3, 0), t.path)
-        assertEquals(5 + 2 + 7, t.sectors().size)
+        assertEquals(5 + 3 + 7, t.sectors().size)
         t.at(t.centerOf(2, 5), 250f)
         assertEquals(listOf(3, 0, 5), t.path)
         assertEquals(RadialAction.Zoom(zoomIn = true, level = 6), t.hovered!!.action)
@@ -112,18 +112,12 @@ class RadialTrackerTest {
     }
 
     @Test
-    fun lockZoneOnlyPastAZoomSpeed() {
+    fun disarmIsALeafBesideTheDirections() {
         val t = tracker()
         t.at(t.centerOf(0, 3), 100f)
-        t.at(t.centerOf(1, 0), 180f)
-        val speed = t.centerOf(2, 3)
-        t.at(speed, 250f)
-        assertFalse(t.inLockZone)
-        t.at(speed, 330f)
-        assertTrue(t.inLockZone)
-        assertEquals(listOf(3, 0, 3), t.path) // still the same speed
-        t.at(speed, 270f)
-        assertFalse(t.inLockZone)
+        t.at(t.centerOf(1, 2), 180f)
+        assertEquals(RadialAction.ZoomDisarm, t.hovered!!.action)
+        assertEquals(5 + 3, t.sectors().size) // no ring 3 under 解除
     }
 
     @Test
@@ -168,7 +162,8 @@ class MenuBuildTest {
         assertTrue(nodes.take(3).none { it.enabled })
         val zoom = nodes[3]
         assertTrue(zoom.enabled)
-        assertEquals(listOf("放大", "縮小"), zoom.children.map { it.label })
+        assertEquals(listOf("放大", "縮小", "解除"), zoom.children.map { it.label })
+        assertFalse(zoom.children[2].enabled) // nothing armed, nothing to clear
         assertEquals((1..7).map { "$it" }, zoom.children[0].children.map { it.badge })
         assertTrue(nodes[4].action == RadialAction.Settings)
     }
@@ -181,10 +176,23 @@ class MenuBuildTest {
     }
 
     @Test
-    fun aLatchedZoomShowsOnTheButton() {
-        val latched = ZoomState(zoomIn = true, level = 2, latched = true)
-        assertEquals(FloatingTone.ZOOMING, FloatingMacroLogic.tone(live, null, FloatingTone.DONE, latched))
-        assertEquals(FloatingTone.READY, FloatingMacroLogic.tone(live, null, null, latched.copy(latched = false)))
+    fun theArmedSpeedIsMarkedAndDisarmEnabled() {
+        val arm = ZoomArm(zoomIn = false, level = 4)
+        val zoom = FloatingMacroLogic.buildMenu(presets, live, null, labels, arm)[3]
+        assertEquals("−4", zoom.badge)
+        assertTrue(zoom.current && zoom.children[1].current && !zoom.children[0].current)
+        assertEquals(listOf(4), zoom.children[1].children.filter { it.current }.map { it.badge.toInt() })
+        assertTrue(zoom.children[2].enabled)
+    }
+
+    @Test
+    fun buttonShowsArmedThenZooming() {
+        val arm = ZoomArm(zoomIn = true, level = 2)
+        assertEquals(FloatingTone.ARMED, FloatingMacroLogic.tone(live, null, null, zoomRunning = false, armed = arm))
+        assertEquals(FloatingTone.ZOOMING, FloatingMacroLogic.tone(live, null, FloatingTone.DONE, zoomRunning = true, armed = arm))
+        // A result flash still shows over an idle arm; offline wins over the arm.
+        assertEquals(FloatingTone.DONE, FloatingMacroLogic.tone(live, null, FloatingTone.DONE, armed = arm))
+        assertEquals(FloatingTone.OFFLINE, FloatingMacroLogic.tone(live.copy(live = false), null, null, armed = arm))
     }
 }
 
@@ -221,42 +229,67 @@ private class FakeZoomPort(var factor: Double = 1.0, val max: Double = 4.0) : Zo
 }
 
 class ZoomDriverTest {
+    private fun kotlinx.coroutines.test.TestScope.driver(port: FakeZoomPort) =
+        ZoomDriver(port, backgroundScope, tickMs = 10, now = { testScheduler.currentTime })
+
     @Test
-    fun holdZoomsPauseFreezesStopEnds() = runTest {
+    fun armingDoesNotMoveTheLens() = runTest {
         val port = FakeZoomPort()
-        val z = ZoomDriver(port, backgroundScope, tickMs = 10, now = { testScheduler.currentTime })
-        z.hold(zoomIn = true, level = 7)
+        val z = driver(port)
+        z.arm(zoomIn = true, level = 7)
+        delay(200)
+        assertTrue(port.updates.isEmpty())
+        assertFalse(z.running.value)
+        assertEquals(ZoomArm(true, 7), z.armed.value)
+    }
+
+    @Test
+    fun toggleRunsThenStopsAndTheArmStays() = runTest {
+        val port = FakeZoomPort()
+        val z = driver(port)
+        z.arm(zoomIn = true, level = 7)
+        assertTrue(z.toggle())
+        assertTrue(z.running.value)
         delay(300)
         assertTrue(port.updates.last() > 1.1)
-        z.pause()
-        assertNull(z.state.value)
+        assertTrue(z.toggle())
+        assertFalse(z.running.value)
+        assertEquals(1, port.ends)
+        assertEquals(ZoomArm(true, 7), z.armed.value) // ready for the next take
         val frozen = port.updates.size
         delay(100)
         assertEquals(frozen, port.updates.size)
-        z.stop()
-        assertEquals(1, port.ends)
     }
 
     @Test
-    fun aLatchedZoomStopsItselfAtTheEnd() = runTest {
+    fun aRunStopsItselfAtTheEndOfTheRange() = runTest {
         val port = FakeZoomPort(factor = 3.9, max = 4.0)
-        val z = ZoomDriver(port, backgroundScope, tickMs = 10, now = { testScheduler.currentTime })
-        z.hold(zoomIn = true, level = 7)
-        z.latch()
-        assertEquals(true, z.state.value?.latched)
+        val z = driver(port)
+        z.arm(zoomIn = true, level = 7)
+        z.toggle()
         delay(400)
-        assertNull(z.state.value)
+        assertFalse(z.running.value)
         assertEquals(1, port.ends)
     }
 
     @Test
-    fun latchWithoutAHeldSpeedJustStops() = runTest {
+    fun toggleWithoutAnArmDoesNothing() = runTest {
         val port = FakeZoomPort()
-        val z = ZoomDriver(port, backgroundScope, tickMs = 10, now = { testScheduler.currentTime })
-        z.hold(zoomIn = false, level = 3)
-        z.pause()
-        z.latch()
-        assertNull(z.state.value)
+        val z = driver(port)
+        assertFalse(z.toggle())
+        assertFalse(z.running.value)
+        assertEquals(0, port.ends)
+    }
+
+    @Test
+    fun disarmStopsARunAndClears() = runTest {
+        val port = FakeZoomPort()
+        val z = driver(port)
+        z.arm(zoomIn = false, level = 3)
+        z.toggle()
+        z.disarm()
+        assertFalse(z.running.value)
+        assertNull(z.armed.value)
         assertEquals(1, port.ends)
     }
 }

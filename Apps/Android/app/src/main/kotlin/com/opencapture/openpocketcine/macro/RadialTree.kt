@@ -13,11 +13,11 @@ sealed interface RadialAction {
 
     data object Settings : RadialAction
 
-    /**
-     * Zooms while the finger rests on it (speed [level] 1..7); releasing in the lock zone past
-     * its outer edge keeps zooming until the floating button is tapped.
-     */
+    /** Sets up zoom (direction, speed [level] 1..7) without moving the lens; a tap runs it. */
     data class Zoom(val zoomIn: Boolean, val level: Int) : RadialAction
+
+    /** Clears the zoom set up above. */
+    data object ZoomDisarm : RadialAction
 }
 
 /** One sector. A node with [children] opens the next ring; releasing on it does nothing. */
@@ -32,8 +32,8 @@ data class RadialNode(
     val isGroup: Boolean get() = children.isNotEmpty()
 }
 
-/** Radii of the three rings and the lock zone, in px; [RadialTracker.ringRadii] builds them. */
-data class RingRadii(val bands: List<Pair<Float, Float>>, val lockStart: Float) {
+/** Radii of the three rings, in px; [RadialTracker.ringRadii] builds them. */
+data class RingRadii(val bands: List<Pair<Float, Float>>) {
     val dead: Float get() = bands.first().first
 }
 
@@ -71,17 +71,13 @@ class RadialTracker(
     var path: List<Int> = emptyList()
         private set
 
-    /** The finger is past the outer edge of a selected zoom speed. */
-    var inLockZone: Boolean = false
-        private set
-
     /** The deepest selected node, or null. */
     val hovered: RadialNode?
         get() = nodeAt(path)
 
-    /** Moves the finger to (x, y); true when the selection or the lock state changed. */
+    /** Moves the finger to (x, y); true when the selection changed. */
     fun move(x: Float, y: Float): Boolean {
-        val before = path to inLockZone
+        val before = path
         val dx = (x - cx).toDouble()
         val dy = (y - cy).toDouble()
         val r = hypot(dx, dy).toFloat()
@@ -96,9 +92,7 @@ class RadialTracker(
                 deeper(ring, angle)
             }
         }
-        val leaf = hovered?.action
-        inLockZone = leaf is RadialAction.Zoom && r >= radii.lockStart
-        return before != (path to inLockZone)
+        return before != path
     }
 
     /**
@@ -199,19 +193,13 @@ class RadialTracker(
             return d
         }
 
-        /**
-         * Ring radii in px for a density and a scale (under 1 on short screens, so the third
-         * ring fits). The lock zone starts a little past the last ring.
-         */
+        /** Ring radii in px for a density and a scale (under 1 on short screens, so ring 3 fits). */
         fun ringRadii(density: Float, scale: Float = 1f): RingRadii {
             fun px(dp: Int) = dp * density * scale
-            return RingRadii(
-                bands = listOf(px(44) to px(140), px(146) to px(214), px(220) to px(286)),
-                lockStart = px(286 + 26),
-            )
+            return RingRadii(listOf(px(44) to px(140), px(146) to px(214), px(220) to px(286)))
         }
 
         /** Room the full menu needs from the button centre, in dp, for [ringRadii] scale 1. */
-        const val FULL_REACH_DP = 286 + 26 + 24
+        const val FULL_REACH_DP = 286 + 24
     }
 }
