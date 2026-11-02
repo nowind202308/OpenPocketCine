@@ -123,12 +123,12 @@ open class MainActivity : ComponentActivity() {
             },
         )
         macroKeypad = MacroKeypad(
-            bindings = PocketPresets.bindings,
+            bindings = { currentPresets().bindings },
             isActive = { model.session.phase == ConnectionPhase.LIVE },
             run = { macroRunner.run(it) },
         )
         // Keypad and floating menu share this runner, so only one preset is ever in flight.
-        macroAttachment = MacroAttachment(PocketPresets.menu, macroCamera.state, macroRunner.running) { macroRunner.run(it) }
+        macroAttachment = MacroAttachment({ currentPresets().menu }, macroCamera.state, macroRunner.running) { macroRunner.run(it) }
         MacroHub.attach(macroAttachment)
         bleProbe = SessionBleProbe(model, macroScope) { macroRunner.isRunning }
         MacroHub.bleProbe = bleProbe
@@ -210,6 +210,11 @@ open class MainActivity : ComponentActivity() {
             FloatingMacroService.start(this)
         }
     }
+
+    /** Presets for the connected body (BLE name and model name both say "Pocket 3" on one). */
+    private fun currentPresets() = PocketPresets.forCamera(
+        model.session.connectedCamera?.let { "${it.name} ${it.model.name}" },
+    )
 
     /** Long-press the app icon → the floating button's settings; follows the .debug package id. */
     private fun publishMacroShortcut() {

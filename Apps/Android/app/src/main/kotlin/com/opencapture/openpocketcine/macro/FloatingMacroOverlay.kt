@@ -32,7 +32,8 @@ import com.opencapture.openpocketcine.R
  */
 class FloatingMacroOverlay(
     private val context: Context,
-    private val menu: List<MacroMenuEntry>,
+    /** Read when the fan opens, so it follows the connected camera. */
+    private val menu: () -> List<MacroMenuEntry>,
     private val onRun: (MacroPreset) -> Unit,
     private val onOpenSettings: () -> Unit,
 ) {
@@ -55,6 +56,8 @@ class FloatingMacroOverlay(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, touchable = false,
     ).apply { flags = flags or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS }
     private var radialShown = false
+    /** The rows of the open fan; a pick always maps to what was drawn. */
+    private var shownMenu: List<MacroMenuEntry> = emptyList()
     private var shown = false
 
     private var lastCamera = MacroCameraState()
@@ -110,7 +113,7 @@ class FloatingMacroOverlay(
     /** Presets first, settings last; a blocked preset is greyed but still sent, so the runner says why. */
     private fun items(): List<RadialItem> {
         val block = FloatingMacroLogic.blockReason(lastCamera, lastRunning)
-        return menu.map { entry ->
+        return shownMenu.map { entry ->
             RadialItem(entry.key, entry.preset.name, block == null,
                 FloatingMacroLogic.isCurrent(entry.preset, lastCamera))
         } + RadialItem("⚙", context.getString(R.string.macro_menu_settings), enabled = true, current = false)
@@ -121,6 +124,7 @@ class FloatingMacroOverlay(
     private fun openRadial(tapMode: Boolean) {
         if (!shown) return
         if (!radialShown) {
+            shownMenu = menu()
             val center = buttonCenter()
             radial.open(center.first, center.second, items(), status())
             windows.addView(radial, radialParams)
@@ -147,7 +151,7 @@ class FloatingMacroOverlay(
         closeRadial()
         when {
             index == null -> Unit
-            index < menu.size -> onRun(menu[index].preset)
+            index < shownMenu.size -> onRun(shownMenu[index].preset)
             else -> onOpenSettings()
         }
     }

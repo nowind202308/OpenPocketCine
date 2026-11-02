@@ -79,7 +79,7 @@ class FloatingMacroLogicTest {
 
 class MacroLinkTest {
     private fun attachment(): MacroAttachment =
-        MacroAttachment(emptyList(), MutableStateFlow(ready), MutableStateFlow(null)) { true }
+        MacroAttachment({ emptyList() }, MutableStateFlow(ready), MutableStateFlow(null)) { true }
 
     @Test
     fun onlyTheCurrentOwnerDetaches() {

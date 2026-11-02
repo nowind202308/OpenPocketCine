@@ -384,7 +384,9 @@ jobs:
     name: Android (${{ matrix.part }})
     needs: changes
     if: ${{ needs.changes.outputs.android == 'true' && !github.event.repository.private }}
-    runs-on: ubuntu-latest
+    # Fork: ubuntu-latest moved to Ubuntu 26, whose libxml2 is no longer libxml2.so.2; the pinned
+    # Swift 6.3.3 toolchain is the Ubuntu 24.04 build and cannot start there.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     # Three Gradle invocations on parallel runners instead of one serial step. Together they
     # schedule exactly the task graph of the former single step (docs/ci.md); each stages the

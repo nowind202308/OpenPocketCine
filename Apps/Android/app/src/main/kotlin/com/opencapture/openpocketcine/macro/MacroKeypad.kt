@@ -9,12 +9,13 @@ package com.opencapture.openpocketcine.macro
  * is false, pass through untouched.
  */
 class MacroKeypad(
-    private val bindings: Map<Int, MacroPreset>,
+    /** Read on every key, so the bindings follow the connected camera. */
+    private val bindings: () -> Map<Int, MacroPreset>,
     private val isActive: () -> Boolean,
     private val run: (MacroPreset) -> Unit,
 ) {
     fun onKey(keyCode: Int, action: Int, repeatCount: Int): Boolean {
-        val preset = bindings[keyCode] ?: return false
+        val preset = bindings()[keyCode] ?: return false
         if (!isActive()) return false
         if (action == ACTION_DOWN && repeatCount == 0) run(preset)
         return true

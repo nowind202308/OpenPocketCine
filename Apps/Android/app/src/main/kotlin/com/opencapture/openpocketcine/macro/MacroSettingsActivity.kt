@@ -127,9 +127,12 @@ class MacroSettingsActivity : ComponentActivity() {
             HorizontalDivider()
 
             Text(stringResource(R.string.macro_settings_presets), style = MaterialTheme.typography.titleMedium)
-            PocketPresets.menu.forEach { entry ->
-                Text(stringResource(R.string.macro_menu_row, entry.key, entry.preset.name),
-                    style = MaterialTheme.typography.bodyLarge)
+            PocketPresets.all.forEach { set ->
+                Text(set.title, style = MaterialTheme.typography.titleSmall)
+                set.menu.forEach { entry ->
+                    Text(stringResource(R.string.macro_menu_row, entry.key, entry.preset.name),
+                        style = MaterialTheme.typography.bodyLarge)
+                }
             }
             Text(stringResource(R.string.macro_settings_usage), style = MaterialTheme.typography.bodyMedium)
             HorizontalDivider()

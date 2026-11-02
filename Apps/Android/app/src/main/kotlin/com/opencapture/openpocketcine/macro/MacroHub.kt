@@ -17,7 +17,8 @@ data class MacroMenuEntry(val key: String, val preset: MacroPreset)
  * menu) goes through the same [run], so the runner's safety checks exist once.
  */
 class MacroAttachment(
-    val menu: List<MacroMenuEntry>,
+    /** Read each time the menu opens, so it follows the connected camera. */
+    val menu: () -> List<MacroMenuEntry>,
     val camera: StateFlow<MacroCameraState>,
     val running: StateFlow<String?>,
     private val start: (MacroPreset) -> Boolean,

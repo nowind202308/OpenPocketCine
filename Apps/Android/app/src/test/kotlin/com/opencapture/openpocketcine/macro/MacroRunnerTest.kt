@@ -152,7 +152,7 @@ class MacroKeypadTest {
     @Test
     fun firesOncePerPressAndConsumesBoundKeysOnly() {
         val fired = mutableListOf<MacroPreset>()
-        val keypad = MacroKeypad(mapOf(8 to preset), isActive = { true }, run = { fired += it })
+        val keypad = MacroKeypad({ mapOf(8 to preset) }, isActive = { true }, run = { fired += it })
         assertTrue(keypad.onKey(8, MacroKeypad.ACTION_DOWN, 0))
         assertTrue(keypad.onKey(8, MacroKeypad.ACTION_DOWN, 1)) // auto-repeat: consumed, not refired
         assertTrue(keypad.onKey(8, 1, 0)) // release consumed
@@ -163,7 +163,7 @@ class MacroKeypadTest {
     @Test
     fun passesKeysThroughWhenNotLive() {
         val fired = mutableListOf<MacroPreset>()
-        val keypad = MacroKeypad(mapOf(8 to preset), isActive = { false }, run = { fired += it })
+        val keypad = MacroKeypad({ mapOf(8 to preset) }, isActive = { false }, run = { fired += it })
         assertFalse(keypad.onKey(8, MacroKeypad.ACTION_DOWN, 0))
         assertTrue(fired.isEmpty())
     }
