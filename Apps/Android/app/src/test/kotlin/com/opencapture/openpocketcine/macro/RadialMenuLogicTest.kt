@@ -224,7 +224,7 @@ class ZoomDriverTest {
     @Test
     fun holdZoomsPauseFreezesStopEnds() = runTest {
         val port = FakeZoomPort()
-        val z = ZoomDriver(port, this, tickMs = 10)
+        val z = ZoomDriver(port, backgroundScope, tickMs = 10, now = { testScheduler.currentTime })
         z.hold(zoomIn = true, level = 7)
         delay(300)
         assertTrue(port.updates.last() > 1.1)
@@ -240,7 +240,7 @@ class ZoomDriverTest {
     @Test
     fun aLatchedZoomStopsItselfAtTheEnd() = runTest {
         val port = FakeZoomPort(factor = 3.9, max = 4.0)
-        val z = ZoomDriver(port, this, tickMs = 10)
+        val z = ZoomDriver(port, backgroundScope, tickMs = 10, now = { testScheduler.currentTime })
         z.hold(zoomIn = true, level = 7)
         z.latch()
         assertEquals(true, z.state.value?.latched)
@@ -252,7 +252,7 @@ class ZoomDriverTest {
     @Test
     fun latchWithoutAHeldSpeedJustStops() = runTest {
         val port = FakeZoomPort()
-        val z = ZoomDriver(port, this, tickMs = 10)
+        val z = ZoomDriver(port, backgroundScope, tickMs = 10, now = { testScheduler.currentTime })
         z.hold(zoomIn = false, level = 3)
         z.pause()
         z.latch()

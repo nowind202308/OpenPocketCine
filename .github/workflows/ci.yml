@@ -502,6 +502,25 @@ jobs:
               print(f"::{level} file={file},line={line}::{text}")
           print(f"{len(found)} lint findings in {len(paths)} reports")
           PY
+      # Fork: failed JVM tests as annotations (test name and first message line), readable
+      # through the check-runs API like the lint findings above.
+      - name: Annotate failed tests
+        if: ${{ failure() && matrix.part == 'JVM tests' }}
+        run: |
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          paths = glob.glob("Apps/Android/**/build/test-results/**/TEST-*.xml", recursive=True)
+          paths += glob.glob("../OpenCine/Android/**/build/test-results/**/TEST-*.xml", recursive=True)
+          failed = []
+          for path in paths:
+              for case in ET.parse(path).getroot().iter("testcase"):
+                  for bad in list(case.findall("failure")) + list(case.findall("error")):
+                      first = (bad.get("message") or bad.text or "").strip().splitlines()
+                      failed.append(f"{case.get('classname')}.{case.get('name')}: {first[0] if first else ''}")
+          for line, level in zip(failed, ["error"] * 10 + ["warning"] * 10 + ["notice"] * 10):
+              print(f"::{level}::{line[:900]}")
+          print(f"{len(failed)} failed tests in {len(paths)} reports")
+          PY
       # Fork: keep the debug APK so it can be sideloaded for hardware testing.
       - name: Upload debug APK
         # Also after a lint failure: the APK is already built by then.
