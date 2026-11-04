@@ -166,14 +166,15 @@ data class HeadPose(
     val enabled: Boolean,
     val atMs: Long,
     val speedLevel: Int = 0,
+    val intervalLevel: Int = 0,
 ) {
     companion object {
-        /** Wire: i16 yaw (0.1°), i16 pitch (0.1°), u8 recenter count, u8 flags (bit 0 enabled, bits 1–3 speed level, 0 = default). */
+        /** Wire: i16 yaw (0.1°), i16 pitch (0.1°), u8 recenter count, u8 flags (bit 0 enabled, bits 1–3 speed level, bits 4–6 send-interval level; 0 = default). */
         fun parse(v: ByteArray, atMs: Long): HeadPose? {
             if (v.size < 6) return null
             fun i16(o: Int) = ((v[o].toInt() and 0xFF) or (v[o + 1].toInt() shl 8)).toShort().toInt()
             val flags = v[5].toInt() and 0xFF
-            return HeadPose(i16(0) / 10.0, i16(2) / 10.0, v[4].toInt() and 0xFF, (flags and 1) != 0, atMs, (flags shr 1) and 0x07)
+            return HeadPose(i16(0) / 10.0, i16(2) / 10.0, v[4].toInt() and 0xFF, (flags and 1) != 0, atMs, (flags shr 1) and 0x07, (flags shr 4) and 0x07)
         }
     }
 }

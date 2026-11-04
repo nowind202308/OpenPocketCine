@@ -12,7 +12,7 @@ import kotlinx.coroutines.launch
 
 /**
  * Fork (feat/headtrack-f2): absolute-angle head tracking. While the camera is live and the head
- * tracker is connected and enabled, every [TICK_MS] it steers the gimbal toward the head pose
+ * tracker is connected and enabled, every send interval it steers the gimbal toward the head pose
  * relative to the last recenter, kept inside safe limits so the gimbal never reaches its stops.
  * A recenter (the tracker's button, or the first pose) makes the current head direction straight
  * ahead: the gimbal is driven to pan 0°, tilt 0°.
@@ -33,6 +33,8 @@ class HeadTrackController(
     private var yaw0 = 0.0
     private var pitch0 = 0.0
     private var lastSpeed: Int? = null
+    private var lastInterval: Int? = null
+    @Volatile private var tickMs = INTERVAL_MS[DEFAULT_INTERVAL - 1]
 
     fun start() {
         if (loop != null) return
@@ -47,7 +49,7 @@ class HeadTrackController(
         scope.launch {
             while (isActive) {
                 tick()
-                delay(TICK_MS)
+                delay(tickMs)
             }
         }
     }
@@ -76,17 +78,28 @@ class HeadTrackController(
             }
             lastSpeed = speed
         }
+        val interval = pose.intervalLevel.takeIf { it in 1..INTERVAL_MS.size } ?: DEFAULT_INTERVAL
+        if (interval != lastInterval) {
+            if (lastInterval != null) {
+                scope.launch { model.session.presentControlNote("傳輸間隔 $interval（${INTERVAL_MS[interval - 1] / 1000.0} 秒）") }
+            }
+            lastInterval = interval
+            tickMs = INTERVAL_MS[interval - 1]
+        }
+        val stepSeconds = tickMs / 1000.0
         val yaw = (pose.yawDeg - yaw0).coerceIn(PAN_MIN_DEG, PAN_MAX_DEG)
         val pitch = (pose.pitchDeg - pitch0).coerceIn(TILT_MIN_DEG, TILT_MAX_DEG)
-        val maxStep = SPEED_DEG_PER_S[speed - 1] * TICK_MS / 1000.0
-        model.session.headTrackToward(yaw, pitch, GAIN, STEP_SECONDS, maxStep)
+        val maxStep = SPEED_DEG_PER_S[speed - 1] * stepSeconds
+        model.session.headTrackToward(yaw, pitch, GAIN, stepSeconds, maxStep)
     }
 
     companion object {
-        const val TICK_MS = 200L
+        // Send interval per level (ms); each step lasts exactly one interval. The tracker picks the
+        // level (four clicks cycle 1→4); firmware without levels reports 0 → DEFAULT_INTERVAL.
+        val INTERVAL_MS = longArrayOf(100L, 200L, 300L, 500L)
+        const val DEFAULT_INTERVAL = 2
         const val STALE_MS = 300L
         const val GAIN = 0.8
-        const val STEP_SECONDS = 0.2
 
         // One step per tick and each step lasts exactly one tick: the next step is sent only after the
         // previous one has finished, so steps never overlap (overlapping 0.2 s steps every 0.1 s led
