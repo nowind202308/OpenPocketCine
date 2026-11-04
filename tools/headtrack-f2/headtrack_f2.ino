@@ -1,5 +1,5 @@
 /*
- * 頭追韌體 F2 v0.6（絕對角度模式，配合 fork 版 OpenPocketCine 分支 feat/headtrack-f2）
+ * 頭追韌體 F2 v0.7（絕對角度模式，配合 fork 版 OpenPocketCine 分支 feat/headtrack-f2）
  * 硬體：Seeed XIAO nRF52840 Sense Plus / Sense（板載 LSM6DS3TR-C）
  *
  * 做什麼：
@@ -15,9 +15,10 @@
  *   短按 = 回正（目前頭的方向當正前方，雲台轉回正前方水平）
  *   雙擊 = 暫停／恢復頭追
  *   三連按 = 切換速度 1→2→3→4（預設 3；App 會跳出提示）
- *   四連按 = 切換傳輸間隔 1→2→3→4（0.1/0.2/0.3/0.5 秒，預設 2）
+ *   四連按 = 切換傳輸間隔 1→2→3→4（0.1/0.2/0.3/0.5 秒，預設 2；只對純角度模式有效）
+ *   五連按 = 切換模式 1→2→3（1 純角度、2 純搖桿、3 綜合，預設 3）
  *   長按 2 秒 = 關機
- * 沒有按鍵時，序列埠輸入：r 回正、e 暫停／恢復、v 1~4 速度、i 1~4 傳輸間隔、s 即時數據、p 參數
+ * 沒有按鍵時，序列埠輸入：r 回正、e 暫停／恢復、v 1~4 速度、i 1~4 傳輸間隔、m 1~3 模式、s 即時數據、p 參數
  *
  * 燈號：紫燈閃 = 開機校正中，請放著不動；藍燈閃 = 等待 App 連線；綠燈每 2 秒閃一下 = 頭追中；黃燈（紅＋綠）閃 = 已暫停
  *
@@ -66,6 +67,7 @@ float headYaw = 0;
 float headPitch = 0;
 uint8_t recenterSeq = 0;
 bool trackingEnabled = true;
+uint8_t modeLevel = 3;     // 1 純角度、2 純搖桿、3 綜合；五連按切換
 uint8_t intervalLevel = 2; // 1~4，App 對應傳輸間隔 0.1/0.2/0.3/0.5 秒；四連按切換
 uint8_t speedLevel = 3;   // 1~4，App 對應 45/80/120/180 °/s；三連按切換
 uint32_t stillSinceMs = 0;
@@ -232,6 +234,11 @@ static void cycleSpeed() {
   Serial.print("頭追速度 "); Serial.println(speedLevel);
 }
 
+static void cycleMode() {
+  modeLevel = modeLevel >= 3 ? 1 : modeLevel + 1;
+  Serial.print("頭追模式 "); Serial.println(modeLevel);
+}
+
 static void cycleInterval() {
   intervalLevel = intervalLevel >= 4 ? 1 : intervalLevel + 1;
   Serial.print("傳輸間隔 "); Serial.println(intervalLevel);
@@ -251,6 +258,7 @@ static void printParams() {
   Serial.print(" 回正次數="); Serial.print(recenterSeq);
   Serial.print(" 速度="); Serial.print(speedLevel);
   Serial.print(" 傳輸間隔="); Serial.print(intervalLevel);
+  Serial.print(" 模式="); Serial.print(modeLevel);
   Serial.print(" 靜止秒數="); Serial.print(STILL_SEC);
   Serial.print(" 反轉水平="); Serial.print(INVERT_YAW);
   Serial.print(" 反轉俯仰="); Serial.println(INVERT_PITCH);
@@ -273,13 +281,14 @@ static void handleSerial() {
     case 'y': INVERT_PITCH = !INVERT_PITCH; headPitch = -headPitch; recenter(); printParams(); break;
     case 's': streaming = !streaming; break;
     case 'p': printParams(); break;
+    case 'm': if (v >= 1 && v <= 3) modeLevel = (uint8_t)v; printParams(); break;
     case 'i': if (v >= 1 && v <= 4) intervalLevel = (uint8_t)v; printParams(); break;
     case 'v': if (v >= 1 && v <= 4) speedLevel = (uint8_t)v; printParams(); break;
     default: Serial.println("未知指令"); break;
   }
 }
 
-// 短按回正、雙擊暫停／恢復、三連按切換速度、四連按切換傳輸間隔、長按關機
+// 短按回正、雙擊暫停／恢復、三連按切換速度、四連按切換傳輸間隔、五連按切換模式、長按關機
 static void handleButton() {
   static bool wasDown = false;
   static uint32_t downAt = 0, lastClickAt = 0;
@@ -296,7 +305,8 @@ static void handleButton() {
     if (clicks == 1) recenter();
     else if (clicks == 2) toggleEnabled();
     else if (clicks == 3) cycleSpeed();
-    else cycleInterval();
+    else if (clicks == 4) cycleInterval();
+    else cycleMode();
     clicks = 0;
   }
   wasDown = down;
@@ -317,9 +327,10 @@ static void sendPose() {
   float y = headYaw, p = headPitch;
   int16_t yt = (int16_t)lroundf(clampf(y, -3000, 3000) * 10.0f);
   int16_t pt = (int16_t)lroundf(clampf(p, -90, 90) * 10.0f);
-  uint8_t buf[6] = {(uint8_t)(yt & 0xFF), (uint8_t)((yt >> 8) & 0xFF),
+  uint8_t buf[7] = {(uint8_t)(yt & 0xFF), (uint8_t)((yt >> 8) & 0xFF),
                     (uint8_t)(pt & 0xFF), (uint8_t)((pt >> 8) & 0xFF),
-                    recenterSeq, (uint8_t)((trackingEnabled ? 1 : 0) | (speedLevel << 1) | (intervalLevel << 4))};
+                    recenterSeq, (uint8_t)((trackingEnabled ? 1 : 0) | (speedLevel << 1) | (intervalLevel << 4)),
+                    modeLevel};
   poseChar.notify(buf, sizeof(buf));
 }
 
@@ -345,17 +356,17 @@ void setup() {
   Bluefruit.setName("HeadTrack-POV");
   Bluefruit.Periph.setConnInterval(6, 12);   // 7.5–15 ms
   bledis.setManufacturer("NoWind");
-  bledis.setModel("HeadTrack F2 v0.6");
+  bledis.setModel("HeadTrack F2 v0.7");
   bledis.begin();
 
   htService.begin();
   poseChar.setProperties(CHR_PROPS_NOTIFY);
   poseChar.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
-  poseChar.setFixedLen(6);
+  poseChar.setFixedLen(7);
   poseChar.begin();
 
   startAdv();
-  Serial.println("頭追 F2 v0.6 啟動，輸入 p 看參數");
+  Serial.println("頭追 F2 v0.7 啟動，輸入 p 看參數");
 }
 
 void loop() {
