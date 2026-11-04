@@ -83,10 +83,14 @@ class HeadTrackController(
     }
 
     companion object {
-        const val TICK_MS = 100L
+        const val TICK_MS = 200L
         const val STALE_MS = 300L
-        const val GAIN = 0.6
+        const val GAIN = 0.8
         const val STEP_SECONDS = 0.2
+
+        // One step per tick and each step lasts exactly one tick: the next step is sent only after the
+        // previous one has finished, so steps never overlap (overlapping 0.2 s steps every 0.1 s led
+        // to the Pocket 3 locking out all app gimbal control, then a feed stall).
 
         // Speed cap per level (degrees per second of commanded motion). The tracker's button picks
         // the level (triple click cycles 1→4); firmware without levels reports 0 → DEFAULT_SPEED.
