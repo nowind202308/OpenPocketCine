@@ -1,5 +1,5 @@
 /*
- * 頭追韌體 F2 v0.3（絕對角度模式，配合 fork 版 OpenPocketCine 分支 feat/headtrack-f2）
+ * 頭追韌體 F2 v0.4（絕對角度模式，配合 fork 版 OpenPocketCine 分支 feat/headtrack-f2）
  * 硬體：Seeed XIAO nRF52840 Sense Plus / Sense（板載 LSM6DS3TR-C）
  *
  * 做什麼：
@@ -14,8 +14,9 @@
  * 按鍵（選配，接 D1 與 GND）：
  *   短按 = 回正（目前頭的方向當正前方，雲台轉回正前方水平）
  *   雙擊 = 暫停／恢復頭追
+ *   三連按 = 切換速度 1→2→3→4（預設 3；App 會跳出提示）
  *   長按 2 秒 = 關機
- * 沒有按鍵時，序列埠輸入：r 回正、e 暫停／恢復、s 即時數據、p 參數
+ * 沒有按鍵時，序列埠輸入：r 回正、e 暫停／恢復、v 1~4 速度、s 即時數據、p 參數
  *
  * 燈號：藍燈閃 = 等待 App 連線；綠燈每 2 秒閃一下 = 頭追中；黃燈（紅＋綠）閃 = 已暫停
  *
@@ -61,6 +62,7 @@ float headYaw = 0;
 float headPitch = 0;
 uint8_t recenterSeq = 0;
 bool trackingEnabled = true;
+uint8_t speedLevel = 3;   // 1~4，App 對應 45/80/120/180 °/s；三連按切換
 uint32_t stillSinceMs = 0;
 bool streaming = false;
 
@@ -198,6 +200,11 @@ static void toggleEnabled() {
   Serial.println(trackingEnabled ? "頭追恢復" : "頭追暫停");
 }
 
+static void cycleSpeed() {
+  speedLevel = speedLevel >= 4 ? 1 : speedLevel + 1;
+  Serial.print("頭追速度 "); Serial.println(speedLevel);
+}
+
 static void powerOff() {
   Serial.println("關機");
   setLed(false, false, false);
@@ -210,6 +217,7 @@ static void powerOff() {
 static void printParams() {
   Serial.print("頭追="); Serial.print(trackingEnabled ? "啟用" : "暫停");
   Serial.print(" 回正次數="); Serial.print(recenterSeq);
+  Serial.print(" 速度="); Serial.print(speedLevel);
   Serial.print(" 靜止秒數="); Serial.print(STILL_SEC);
   Serial.print(" 反轉水平="); Serial.print(INVERT_YAW);
   Serial.print(" 反轉俯仰="); Serial.println(INVERT_PITCH);
@@ -232,31 +240,29 @@ static void handleSerial() {
     case 'y': INVERT_PITCH = !INVERT_PITCH; headPitch = -headPitch; recenter(); printParams(); break;
     case 's': streaming = !streaming; break;
     case 'p': printParams(); break;
+    case 'v': if (v >= 1 && v <= 4) speedLevel = (uint8_t)v; printParams(); break;
     default: Serial.println("未知指令"); break;
   }
 }
 
-// 短按回正、雙擊暫停／恢復、長按關機
+// 短按回正、雙擊暫停／恢復、三連按切換速度、長按關機
 static void handleButton() {
   static bool wasDown = false;
   static uint32_t downAt = 0, lastClickAt = 0;
-  static bool pendingClick = false;
+  static uint8_t clicks = 0;
   bool down = digitalRead(BUTTON_PIN) == LOW;
   uint32_t now = millis();
   if (down && !wasDown) downAt = now;
   if (down && now - downAt >= LONG_PRESS_MS) powerOff();
   if (!down && wasDown && now - downAt >= 30) {
-    if (pendingClick && now - lastClickAt <= DOUBLE_CLICK_MS) {
-      pendingClick = false;
-      toggleEnabled();
-    } else {
-      pendingClick = true;
-      lastClickAt = now;
-    }
+    clicks++;
+    lastClickAt = now;
   }
-  if (pendingClick && now - lastClickAt > DOUBLE_CLICK_MS) {
-    pendingClick = false;
-    recenter();
+  if (clicks && !down && now - lastClickAt > DOUBLE_CLICK_MS) {
+    if (clicks == 1) recenter();
+    else if (clicks == 2) toggleEnabled();
+    else cycleSpeed();
+    clicks = 0;
   }
   wasDown = down;
 }
@@ -278,7 +284,7 @@ static void sendPose() {
   int16_t pt = (int16_t)lroundf(clampf(p, -90, 90) * 10.0f);
   uint8_t buf[6] = {(uint8_t)(yt & 0xFF), (uint8_t)((yt >> 8) & 0xFF),
                     (uint8_t)(pt & 0xFF), (uint8_t)((pt >> 8) & 0xFF),
-                    recenterSeq, (uint8_t)(trackingEnabled ? 1 : 0)};
+                    recenterSeq, (uint8_t)((trackingEnabled ? 1 : 0) | (speedLevel << 1))};
   poseChar.notify(buf, sizeof(buf));
 }
 
@@ -304,7 +310,7 @@ void setup() {
   Bluefruit.setName("HeadTrack-POV");
   Bluefruit.Periph.setConnInterval(6, 12);   // 7.5–15 ms
   bledis.setManufacturer("NoWind");
-  bledis.setModel("HeadTrack F2 v0.3");
+  bledis.setModel("HeadTrack F2 v0.4");
   bledis.begin();
 
   htService.begin();
@@ -314,7 +320,7 @@ void setup() {
   poseChar.begin();
 
   startAdv();
-  Serial.println("頭追 F2 v0.3 啟動，輸入 p 看參數");
+  Serial.println("頭追 F2 v0.4 啟動，輸入 p 看參數");
 }
 
 void loop() {

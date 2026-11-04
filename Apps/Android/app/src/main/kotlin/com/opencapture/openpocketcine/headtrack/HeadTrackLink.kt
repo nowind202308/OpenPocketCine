@@ -159,13 +159,21 @@ class HeadTrackLink(private val context: Context, private val onState: (connecte
  * right positive; pitch absolute from gravity, look-up positive), the button's recenter count and
  * whether tracking is enabled on the device.
  */
-data class HeadPose(val yawDeg: Double, val pitchDeg: Double, val recenterSeq: Int, val enabled: Boolean, val atMs: Long) {
+data class HeadPose(
+    val yawDeg: Double,
+    val pitchDeg: Double,
+    val recenterSeq: Int,
+    val enabled: Boolean,
+    val atMs: Long,
+    val speedLevel: Int = 0,
+) {
     companion object {
-        /** Wire: i16 yaw (0.1°), i16 pitch (0.1°), u8 recenter count, u8 flags (bit 0 enabled). */
+        /** Wire: i16 yaw (0.1°), i16 pitch (0.1°), u8 recenter count, u8 flags (bit 0 enabled, bits 1–3 speed level, 0 = default). */
         fun parse(v: ByteArray, atMs: Long): HeadPose? {
             if (v.size < 6) return null
             fun i16(o: Int) = ((v[o].toInt() and 0xFF) or (v[o + 1].toInt() shl 8)).toShort().toInt()
-            return HeadPose(i16(0) / 10.0, i16(2) / 10.0, v[4].toInt() and 0xFF, (v[5].toInt() and 1) != 0, atMs)
+            val flags = v[5].toInt() and 0xFF
+            return HeadPose(i16(0) / 10.0, i16(2) / 10.0, v[4].toInt() and 0xFF, (flags and 1) != 0, atMs, (flags shr 1) and 0x07)
         }
     }
 }

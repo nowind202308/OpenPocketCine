@@ -32,6 +32,7 @@ class HeadTrackController(
     private var lastSeq: Int? = null
     private var yaw0 = 0.0
     private var pitch0 = 0.0
+    private var lastSpeed: Int? = null
 
     fun start() {
         if (loop != null) return
@@ -68,9 +69,17 @@ class HeadTrackController(
             yaw0 = pose.yawDeg
             pitch0 = pose.pitchDeg
         }
+        val speed = pose.speedLevel.takeIf { it in 1..SPEED_DEG_PER_S.size } ?: DEFAULT_SPEED
+        if (speed != lastSpeed) {
+            if (lastSpeed != null) {
+                scope.launch { model.session.presentControlNote("頭追速度 $speed（${SPEED_DEG_PER_S[speed - 1].toInt()}°/s）") }
+            }
+            lastSpeed = speed
+        }
         val yaw = (pose.yawDeg - yaw0).coerceIn(PAN_MIN_DEG, PAN_MAX_DEG)
         val pitch = (pose.pitchDeg - pitch0).coerceIn(TILT_MIN_DEG, TILT_MAX_DEG)
-        model.session.headTrackToward(yaw, pitch, GAIN, STEP_SECONDS)
+        val maxStep = SPEED_DEG_PER_S[speed - 1] * TICK_MS / 1000.0
+        model.session.headTrackToward(yaw, pitch, GAIN, STEP_SECONDS, maxStep)
     }
 
     companion object {
@@ -78,6 +87,11 @@ class HeadTrackController(
         const val STALE_MS = 300L
         const val GAIN = 0.6
         const val STEP_SECONDS = 0.2
+
+        // Speed cap per level (degrees per second of commanded motion). The tracker's button picks
+        // the level (triple click cycles 1→4); firmware without levels reports 0 → DEFAULT_SPEED.
+        val SPEED_DEG_PER_S = doubleArrayOf(45.0, 80.0, 120.0, 180.0)
+        const val DEFAULT_SPEED = 3
 
         // Safe limits, inside what the Pocket 3 accepts in video mode (SET refuses past about −43°).
         const val PAN_MIN_DEG = -43.0
