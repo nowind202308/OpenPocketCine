@@ -1,5 +1,5 @@
 /*
- * 頭追韌體 F2 v0.4（絕對角度模式，配合 fork 版 OpenPocketCine 分支 feat/headtrack-f2）
+ * 頭追韌體 F2 v0.5（絕對角度模式，配合 fork 版 OpenPocketCine 分支 feat/headtrack-f2）
  * 硬體：Seeed XIAO nRF52840 Sense Plus / Sense（板載 LSM6DS3TR-C）
  *
  * 做什麼：
@@ -18,7 +18,7 @@
  *   長按 2 秒 = 關機
  * 沒有按鍵時，序列埠輸入：r 回正、e 暫停／恢復、v 1~4 速度、s 即時數據、p 參數
  *
- * 燈號：藍燈閃 = 等待 App 連線；綠燈每 2 秒閃一下 = 頭追中；黃燈（紅＋綠）閃 = 已暫停
+ * 燈號：紫燈閃 = 開機校正中，請放著不動；藍燈閃 = 等待 App 連線；綠燈每 2 秒閃一下 = 頭追中；黃燈（紅＋綠）閃 = 已暫停
  *
  * 藍牙格式（App 端 HeadPose.parse）：i16 yaw（0.1°）、i16 pitch（0.1°）、u8 回正次數、u8 旗標（bit0 啟用）
  */
@@ -40,8 +40,11 @@ const float FORWARD_SIGN = 1.0f;
 const float GRAV_TAU_S      = 0.5f;
 const float PITCH_TAU_S     = 1.5f;
 const float YAW_GATE_DPS    = 1.0f;
-const float STILL_GYRO_DPS  = 2.0f;
 const float BIAS_ALPHA      = 0.02f;
+const float CAL_RANGE_DPS   = 3.0f;   // 開機校正：1 秒內每軸讀值最大變化
+const float STILL_JITTER_DPS = 1.5f;  // 執行中判斷靜止：讀值相對短期平均的抖動
+const float STILL_MAX_DPS   = 10.0f;  // 執行中可自動修正的最大零點誤差
+const float RAW_AVG_TAU_S   = 0.5f;
 const uint32_t SAMPLE_US    = 5000;   // 200 Hz 取樣
 const uint32_t NOTIFY_MS    = 20;     // 50 Hz 送出
 const int   BUTTON_PIN      = D1;
@@ -172,16 +175,38 @@ static void readAccel(float a[3]) {
   for (int i = 0; i < 3; i++) a[i] = r[i] * ACC_G_PER_LSB;
 }
 
-// 開機時靜置 1 秒，量陀螺儀初始零點與重力方向
+// 開機校正：每次開機都重新量陀螺儀零點與重力方向。
+// 必須真的靜止才算數：1 秒內三軸讀值的變化都很小、加速度約 1g；
+// 有在動就紫燈閃並重新量，直到放穩為止（避免把「拿在手上的轉動」當成零點，造成一直漂）。
 static void initialCalibrate() {
-  float gs[3] = {0, 0, 0}, as[3] = {0, 0, 0}, g[3], a[3];
   const int N = 200;
-  for (int i = 0; i < N; i++) {
-    readGyro(g); readAccel(a);
-    for (int k = 0; k < 3; k++) { gs[k] += g[k]; as[k] += a[k]; }
-    delay(5);
+  for (uint32_t attempt = 0;; attempt++) {
+    float gs[3] = {0, 0, 0}, as[3] = {0, 0, 0}, g[3], a[3];
+    float gmin[3] = {1e9f, 1e9f, 1e9f}, gmax[3] = {-1e9f, -1e9f, -1e9f};
+    bool accBad = false;
+    for (int i = 0; i < N; i++) {
+      readGyro(g); readAccel(a);
+      for (int k = 0; k < 3; k++) {
+        gs[k] += g[k]; as[k] += a[k];
+        if (g[k] < gmin[k]) gmin[k] = g[k];
+        if (g[k] > gmax[k]) gmax[k] = g[k];
+      }
+      float m = sqrtf(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+      if (m < 0.9f || m > 1.1f) accBad = true;
+      bool blink = attempt > 0 && (millis() / 250) % 2;
+      setLed(blink, false, blink);   // 紫燈閃：請放著不動
+      delay(5);
+    }
+    bool calm = !accBad;
+    for (int k = 0; k < 3; k++) if (gmax[k] - gmin[k] > CAL_RANGE_DPS) calm = false;
+    if (calm) {
+      for (int k = 0; k < 3; k++) { bias[k] = gs[k] / N; up[k] = as[k] / N; }
+      Serial.print("開機校正完成，零點 dps: ");
+      Serial.print(bias[0], 2); Serial.print(", "); Serial.print(bias[1], 2); Serial.print(", "); Serial.println(bias[2], 2);
+      break;
+    }
+    if (attempt % 4 == 0) Serial.println("校正中：請把頭追放著不動");
   }
-  for (int k = 0; k < 3; k++) { bias[k] = gs[k] / N; up[k] = as[k] / N; }
   normalize(up);
   float fwd[3] = {0, 0, 0};
   fwd[FORWARD_AXIS] = FORWARD_SIGN;
@@ -310,7 +335,7 @@ void setup() {
   Bluefruit.setName("HeadTrack-POV");
   Bluefruit.Periph.setConnInterval(6, 12);   // 7.5–15 ms
   bledis.setManufacturer("NoWind");
-  bledis.setModel("HeadTrack F2 v0.4");
+  bledis.setModel("HeadTrack F2 v0.5");
   bledis.begin();
 
   htService.begin();
@@ -320,7 +345,7 @@ void setup() {
   poseChar.begin();
 
   startAdv();
-  Serial.println("頭追 F2 v0.4 啟動，輸入 p 看參數");
+  Serial.println("頭追 F2 v0.5 啟動，輸入 p 看參數");
 }
 
 void loop() {
@@ -348,8 +373,16 @@ void loop() {
       normalize(up);
     }
 
-    bool still = fabsf(gc[0]) < STILL_GYRO_DPS && fabsf(gc[1]) < STILL_GYRO_DPS &&
-                 fabsf(gc[2]) < STILL_GYRO_DPS && amag > 0.9f && amag < 1.1f;
+    // 靜止判斷看「讀值有沒有在變」，不看扣掉零點後的大小：零點錯了也認得出靜止，才能修回來
+    static float gAvg[3] = {0, 0, 0};
+    static bool gAvgInit = false;
+    if (!gAvgInit) { for (int i = 0; i < 3; i++) gAvg[i] = g[i]; gAvgInit = true; }
+    float ka = dt / (RAW_AVG_TAU_S + dt);
+    bool still = amag > 0.9f && amag < 1.1f;
+    for (int i = 0; i < 3; i++) {
+      gAvg[i] += ka * (g[i] - gAvg[i]);
+      if (fabsf(g[i] - gAvg[i]) > STILL_JITTER_DPS || fabsf(gc[i]) > STILL_MAX_DPS) still = false;
+    }
     uint32_t nowMs = millis();
     if (!still) stillSinceMs = nowMs;
     else if (nowMs - stillSinceMs >= (uint32_t)(STILL_SEC * 1000)) {
