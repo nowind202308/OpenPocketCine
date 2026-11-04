@@ -119,24 +119,29 @@ class HeadTrackLink(private val context: Context, private val onState: (connecte
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 g.writeDescriptor(cccd, enable)
             } else {
-                @Suppress("DEPRECATION")
-                cccd.value = enable
-                @Suppress("DEPRECATION")
-                g.writeDescriptor(cccd)
+                writeDescriptorLegacy(g, cccd, enable)
             }
             setConnected(true)
         }
 
         @Deprecated("Deprecated in API 33")
         override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic) {
-            @Suppress("DEPRECATION")
-            ch.value?.let(::accept)
+            legacyValue(ch)?.let(::accept)
         }
 
         override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic, value: ByteArray) {
             accept(value)
         }
     }
+
+    @Suppress("DEPRECATION")
+    private fun writeDescriptorLegacy(g: BluetoothGatt, d: BluetoothGattDescriptor, value: ByteArray) {
+        d.value = value
+        g.writeDescriptor(d)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun legacyValue(ch: BluetoothGattCharacteristic): ByteArray? = ch.value
 
     private fun accept(value: ByteArray) {
         HeadPose.parse(value, SystemClock.elapsedRealtime())?.let { latest = it }
