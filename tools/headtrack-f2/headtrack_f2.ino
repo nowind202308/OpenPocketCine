@@ -1,11 +1,15 @@
 /*
- * 頭追韌體 F2 v0.7（絕對角度模式，配合 fork 版 OpenPocketCine 分支 feat/headtrack-f2）
+ * 頭追韌體 F2 v0.8（絕對角度模式，配合 fork 版 OpenPocketCine 分支 feat/headtrack-f2）
  * 硬體：Seeed XIAO nRF52840 Sense Plus / Sense（板載 LSM6DS3TR-C）
  *
  * 做什麼：
  *   用自訂藍牙服務，每秒 50 次送出頭部角度給手機 App：
- *   - 水平（yaw）：積分頭的轉角，向右為正；頭不動時不積分，靜止 3 秒自動校正陀螺儀零點
- *   - 俯仰（pitch）：用重力算出絕對仰角，抬頭為正
+ *   - 用四元數追蹤頭的完整姿態（陀螺儀積分，重力只修正傾斜），再從「臉朝向的方向」算出：
+ *     水平（yaw）：向右為正，累計可超過 ±180°；俯仰（pitch）：抬頭為正
+ *   - 頭幾乎不動時不積分，靜止 3 秒自動校正陀螺儀零點
+ *   - v0.8：v0.7 把陀螺儀投影到「低通後的重力方向」來積分水平角，頭畫圓、歪頭或耳掛偏心時
+ *     重力估計落後，每圈會累積偏移（順、逆時鐘方向相反、大小不同）。改成四元數後，
+ *     頭回到同一個方向，水平角就回到同一個值
  *   App 收到後換算成雲台角度，加上安全限位，再用相對移動指令驅動 Pocket 雲台
  *   本韌體不是藍牙手把，不需要在手機藍牙設定裡配對；App 會自動掃描連線
  *
@@ -41,7 +45,7 @@ const float FORWARD_SIGN = 1.0f;
 // ===== 固定常數 =====
 const float GRAV_TAU_S      = 0.5f;
 const float PITCH_TAU_S     = 1.5f;
-const float YAW_GATE_DPS    = 1.0f;
+const float YAW_GATE_DPS    = 1.0f;   // 三軸合計轉速低於此值視為不動，不積分
 const float BIAS_ALPHA      = 0.02f;
 const float CAL_RANGE_DPS   = 3.0f;   // 開機校正：1 秒內每軸讀值最大變化
 const float STILL_JITTER_DPS = 1.5f;  // 執行中判斷靜止：讀值相對短期平均的抖動
@@ -65,6 +69,9 @@ float bias[3] = {0, 0, 0};
 float up[3]   = {0, 0, 1};
 float headYaw = 0;
 float headPitch = 0;
+float att[4] = {1, 0, 0, 0};   // 姿態四元數 w,x,y,z：機身座標 → 世界座標（世界 z 朝上）
+float lastHeading = 0;
+bool  headingValid = false;
 uint8_t recenterSeq = 0;
 bool trackingEnabled = true;
 uint8_t modeLevel = 3;     // 1 純角度、2 純搖桿、3 綜合；五連按切換
@@ -182,6 +189,35 @@ static void readAccel(float a[3]) {
 // 開機校正：每次開機都重新量陀螺儀零點與重力方向。
 // 必須真的靜止才算數：1 秒內三軸讀值的變化都很小、加速度約 1g；
 // 有在動就紫燈閃並重新量，直到放穩為止（避免把「拿在手上的轉動」當成零點，造成一直漂）。
+// 四元數乘法 o = a ⊗ b
+static void qmul(const float a[4], const float b[4], float o[4]) {
+  o[0] = a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3];
+  o[1] = a[0] * b[1] + a[1] * b[0] + a[2] * b[3] - a[3] * b[2];
+  o[2] = a[0] * b[2] - a[1] * b[3] + a[2] * b[0] + a[3] * b[1];
+  o[3] = a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0];
+}
+// 機身向量 → 世界向量
+static void qrot(const float q[4], const float v[3], float o[3]) {
+  float p[4] = {0, v[0], v[1], v[2]}, t[4], c[4] = {q[0], -q[1], -q[2], -q[3]}, r[4];
+  qmul(q, p, t); qmul(t, c, r);
+  o[0] = r[1]; o[1] = r[2]; o[2] = r[3];
+}
+// 世界向量 → 機身向量
+static void qrotInv(const float q[4], const float v[3], float o[3]) {
+  float c[4] = {q[0], -q[1], -q[2], -q[3]};
+  qrot(c, v, o);
+}
+// 由機身座標的「上」方向設定初始姿態（水平方向任意，之後只看相對變化）
+static void attitudeFromUp(const float u[3]) {
+  if (u[2] < -0.999f) { att[0] = 0; att[1] = 1; att[2] = 0; att[3] = 0; }
+  else {
+    att[0] = 1 + u[2]; att[1] = u[1]; att[2] = -u[0]; att[3] = 0;   // 1+u·z, u×z
+    float n = sqrtf(att[0] * att[0] + att[1] * att[1] + att[2] * att[2] + att[3] * att[3]);
+    for (int i = 0; i < 4; i++) att[i] /= n;
+  }
+  headingValid = false;
+}
+
 static void initialCalibrate() {
   const int N = 200;
   for (uint32_t attempt = 0;; attempt++) {
@@ -216,6 +252,7 @@ static void initialCalibrate() {
   fwd[FORWARD_AXIS] = FORWARD_SIGN;
   headPitch = asinf(clampf(dot(fwd, up), -1, 1)) * 57.29578f;
   if (INVERT_PITCH) headPitch = -headPitch;
+  attitudeFromUp(up);
 }
 
 static void recenter() {
@@ -410,25 +447,41 @@ void loop() {
       for (int i = 0; i < 3; i++) bias[i] += BIAS_ALPHA * (g[i] - bias[i]);
     }
 
+    // 姿態：陀螺儀積分（rad/s），重力只修正傾斜（修正量與「上」垂直，不會改到水平方向）
+    float w[3] = {gc[0] * 0.0174533f, gc[1] * 0.0174533f, gc[2] * 0.0174533f};
+    if (sqrtf(dot(gc, gc)) < YAW_GATE_DPS) w[0] = w[1] = w[2] = 0;
+    if (accOk) {
+      const float zw[3] = {0, 0, 1};
+      float v[3], e[3];
+      qrotInv(att, zw, v);           // 估計的「上」（機身座標）
+      cross(an, v, e);               // 量到的上 × 估計的上
+      float kp = 1.0f / PITCH_TAU_S;
+      for (int i = 0; i < 3; i++) w[i] += kp * e[i];
+    }
+    float qw[4] = {0, w[0], w[1], w[2]}, dq[4];
+    qmul(att, qw, dq);
+    float n = 0;
+    for (int i = 0; i < 4; i++) { att[i] += 0.5f * dt * dq[i]; n += att[i] * att[i]; }
+    n = sqrtf(n);
+    for (int i = 0; i < 4; i++) att[i] /= n;
+
+    // 臉朝向的方向（世界座標）→ 水平、俯仰
     float fwd[3] = {0, 0, 0};
     fwd[FORWARD_AXIS] = FORWARD_SIGN;
-    float left[3];
-    cross(up, fwd, left);
-    normalize(left);
-    float yaw = -dot(gc, up);        // 向右為正
-    float pitch = -dot(gc, left);    // 抬頭為正
-    if (INVERT_YAW) yaw = -yaw;
-    if (INVERT_PITCH) pitch = -pitch;
-
-    if (fabsf(yaw) > YAW_GATE_DPS) headYaw += yaw * dt;
-
-    headPitch += pitch * dt;
-    if (accOk) {
-      float ai[3] = {a[0] / amag, a[1] / amag, a[2] / amag};
-      float accPitch = asinf(clampf(dot(fwd, ai), -1, 1)) * 57.29578f;
-      if (INVERT_PITCH) accPitch = -accPitch;
-      float kp = dt / (PITCH_TAU_S + dt);
-      headPitch += kp * (accPitch - headPitch);
+    float F[3];
+    qrot(att, fwd, F);
+    float pitch = asinf(clampf(F[2], -1, 1)) * 57.29578f;
+    headPitch = INVERT_PITCH ? -pitch : pitch;
+    if (sqrtf(F[0] * F[0] + F[1] * F[1]) > 0.2f) {   // 幾乎直上直下時水平角無意義，維持原值
+      float h = -atan2f(F[1], F[0]) * 57.29578f;      // 向右為正
+      if (headingValid) {
+        float d = h - lastHeading;
+        if (d > 180) d -= 360;
+        if (d < -180) d += 360;
+        headYaw += INVERT_YAW ? -d : d;
+      }
+      lastHeading = h;
+      headingValid = true;
     }
   }
 
