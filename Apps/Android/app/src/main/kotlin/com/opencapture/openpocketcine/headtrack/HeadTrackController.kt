@@ -21,7 +21,9 @@ import kotlinx.coroutines.launch
  *    Accurate, but the Pocket 3 locks out app gimbal control after a few minutes of these.
  * 2. Stick: joystick throw proportional to head turn rate. Never locks, but open loop: drifts.
  * 3. Hybrid (default): joystick channel, throw proportional to the gap between the target angle and
- *    the live gimbal angle (closed loop).
+ *    the live gimbal angle predicted ~200 ms ahead (closed loop with latency compensation), with the
+ *    throw slew-limited so it never reverses within one tick. Stick signs are fixed (+1 both axes,
+ *    verified on the Pocket 3); the old auto sign probe misread oscillation as a reversed axis.
  *
  * A recenter (the tracker's button, or the first pose) makes the current head direction straight
  * ahead: the gimbal is driven to pan 0°, tilt 0°.
@@ -52,10 +54,13 @@ class HeadTrackController(
     private var prevHeadYaw: Double? = null
     private var prevHeadPitch: Double? = null
     private var prevHeadAt = 0L
-    private var signX = 1.0
-    private var signY = 1.0
-    private val probeX = SignProbe()
-    private val probeY = SignProbe()
+    // Hybrid damping state: last sent throw (for slew limiting) and the gimbal's estimated velocity.
+    private var lastCx = 0.0
+    private var lastCy = 0.0
+    private var prevLive: Pair<Double, Double>? = null
+    private var prevLiveAt = 0L
+    private var velX = 0.0
+    private var velY = 0.0
 
     fun start() {
         if (loop != null) return
@@ -90,6 +95,11 @@ class HeadTrackController(
         }
         prevHeadYaw = null
         prevHeadPitch = null
+        lastCx = 0.0
+        lastCy = 0.0
+        prevLive = null
+        velX = 0.0
+        velY = 0.0
     }
 
     private fun tick() {
@@ -120,6 +130,7 @@ class HeadTrackController(
             if (lastSpeed != null) {
                 scope.launch { model.session.presentControlNote("頭追速度 $speed（${SPEED_DEG_PER_S[speed - 1].toInt()}°/s）") }
             }
+            model.session.headTrackNote("speed=$speed (${SPEED_DEG_PER_S[speed - 1].toInt()}°/s, raw=${pose.speedLevel})")
             lastSpeed = speed
         }
         val interval = pose.intervalLevel.takeIf { it in 1..INTERVAL_MS.size } ?: DEFAULT_INTERVAL
@@ -146,14 +157,26 @@ class HeadTrackController(
         val live = model.session.headTrackLivePose() ?: return
         val cap = (speedDps / STICK_FULL_DPS).coerceAtMost(1.0)
         val now = SystemClock.elapsedRealtime()
+        // Estimate gimbal velocity from successive live poses (low-passed), used to predict where the
+        // gimbal will be once the command's ~200 ms round trip has passed.
+        val pl = prevLive
+        val ldt = (now - prevLiveAt) / 1000.0
+        if (pl != null && ldt in 0.02..0.5) {
+            velX += VEL_ALPHA * ((live.first - pl.first) / ldt - velX)
+            velY += VEL_ALPHA * ((live.second - pl.second) / ldt - velY)
+        }
+        prevLive = live
+        prevLiveAt = now
         var cx: Double
         var cy: Double
         val tag: String
         if (mode == MODE_HYBRID || homing) {
             val tYaw = if (homing) 0.0 else yaw
             val tPitch = if (homing) 0.0 else pitch
-            cx = closedLoop(tYaw - live.first, cap)
-            cy = closedLoop(tPitch - live.second, cap)
+            cx = closedLoop(tYaw - (live.first + velX * LATENCY_S), cap)
+            cy = closedLoop(tPitch - (live.second + velY * LATENCY_S), cap)
+            cx = slew(lastCx, cx)
+            cy = slew(lastCy, cy)
             tag = if (homing) "home" else "hybrid"
             if (homing && abs(live.first) < 2.0 && abs(live.second) < 2.0) homing = false
         } else {
@@ -175,16 +198,8 @@ class HeadTrackController(
         prevHeadPitch = headPitch
         prevHeadAt = now
 
-        // The joystick's sign convention on this body is not verified: if pushing one way keeps
-        // moving the gimbal the other way, flip that axis.
-        if (probeX.flip(cx * signX, live.first, now)) {
-            signX = -signX
-            model.session.headTrackNote("flip pan sign → $signX")
-        }
-        if (probeY.flip(cy * signY, live.second, now)) {
-            signY = -signY
-            model.session.headTrackNote("flip tilt sign → $signY")
-        }
+        lastCx = cx
+        lastCy = cy
         if (cx == 0.0 && cy == 0.0) {
             if (stickActive) {
                 stickActive = false
@@ -194,50 +209,25 @@ class HeadTrackController(
         }
         stickActive = true
         model.session.headTrackStick(
-            cx * signX,
-            cy * signY,
+            cx,
+            cy,
             "$tag want=${fmt(yaw)},${fmt(pitch)} live=${fmt(live.first)},${fmt(live.second)} " +
-                "throw=${fmt(cx * signX)},${fmt(cy * signY)} cap=${fmt(cap)}",
+                "vel=${fmt(velX)},${fmt(velY)} throw=${fmt(cx)},${fmt(cy)} spd=$speed cap=${fmt(cap)}",
         )
     }
 
     private fun closedLoop(err: Double, cap: Double): Double {
         if (abs(err) < STICK_DEADBAND_DEG) return 0.0
         val t = (err * STICK_KP).coerceIn(-cap, cap)
-        return if (abs(t) < STICK_MIN_THROW) STICK_MIN_THROW * sign(err) else t
+        // A minimum throw only far from the target; near it, a forced push overshoots with the latency.
+        return if (abs(t) < STICK_MIN_THROW && abs(err) >= STICK_MIN_THROW_ERR_DEG) STICK_MIN_THROW * sign(err) else t
     }
+
+    /** Limits how far the throw moves per tick, so it ramps through zero instead of flipping. */
+    private fun slew(prev: Double, want: Double): Double =
+        want.coerceIn(prev - STICK_SLEW_PER_TICK, prev + STICK_SLEW_PER_TICK)
 
     private fun fmt(v: Double) = "%.1f".format(java.util.Locale.ROOT, v)
-
-    /** Watches one axis: commanded direction vs. how the live angle actually moved. */
-    private class SignProbe {
-        private var since = 0L
-        private var start = 0.0
-        private var pushSum = 0.0
-        private var samples = 0
-
-        fun flip(command: Double, live: Double, now: Long): Boolean {
-            if (abs(command) < 0.15) {
-                samples = 0
-                return false
-            }
-            if (samples == 0) {
-                since = now
-                start = live
-                pushSum = 0.0
-            }
-            if (samples > 0 && sign(command) != sign(pushSum)) {
-                samples = 0
-                return false
-            }
-            pushSum += command
-            samples++
-            if (now - since < 600) return false
-            val moved = live - start
-            samples = 0
-            return abs(moved) > 3.0 && sign(moved) == -sign(pushSum)
-        }
-    }
 
     companion object {
         const val MODE_ANGLE = 1
@@ -255,9 +245,13 @@ class HeadTrackController(
         // Joystick modes.
         const val STICK_TICK_MS = 40L
         const val STICK_FULL_DPS = 120.0       // assumed gimbal speed at full linear throw
-        const val STICK_KP = 1.0 / 25.0        // full throw at 25° gap
-        const val STICK_DEADBAND_DEG = 1.0
+        const val STICK_KP = 1.0 / 45.0        // full throw at 45° gap (was 25°: oscillated)
+        const val STICK_DEADBAND_DEG = 1.5
         const val STICK_MIN_THROW = 0.05
+        const val STICK_MIN_THROW_ERR_DEG = 4.0
+        const val STICK_SLEW_PER_TICK = 0.08   // 0 → full throw takes ~0.5 s at 40 ms ticks
+        const val LATENCY_S = 0.2              // command → live pose round trip, assumed
+        const val VEL_ALPHA = 0.3              // low-pass on the gimbal velocity estimate
         const val STICK_RATE_DEADBAND_DPS = 3.0
 
         const val STALE_MS = 300L
