@@ -472,7 +472,17 @@ jobs:
         run: |
           set -euo pipefail
           read -ra tasks <<< "$TASKS"
-          ./gradlew --init-script ../../scripts/ci-gradle-task-timing.gradle "${tasks[@]}"
+          ./gradlew --init-script ../../scripts/ci-gradle-task-timing.gradle "${tasks[@]}" 2>&1 \
+            | tee "$RUNNER_TEMP/gradle-output.log"
+      # Fork: Kotlin compiler errors and Gradle failure lines as annotations (the job log is not
+      # reachable through the check-runs API). At most 10 per level per step.
+      - name: Annotate build errors
+        if: ${{ failure() }}
+        run: |
+          log="$RUNNER_TEMP/gradle-output.log"
+          [ -f "$log" ] || exit 0
+          grep -E '^e: ' "$log" | head -10 | sed -E 's#^e: (file://)?([^:]+):([0-9]+):([0-9]+) (.*)$#::error file=\2,line=\3,col=\4::\5#' || true
+          grep -E -A3 '^\* What went wrong:' "$log" | head -8 | sed -E 's#^(.*)$#::warning::\1#' || true
       # Fork: lint findings as annotations, so they are readable through the check-runs API
       # without the job log. GitHub keeps at most 10 per level per step, hence three levels.
       - name: Annotate lint findings
