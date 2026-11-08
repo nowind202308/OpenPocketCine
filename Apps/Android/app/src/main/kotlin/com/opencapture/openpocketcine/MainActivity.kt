@@ -116,6 +116,8 @@ open class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen().setKeepOnScreenCondition { !launch.firstFrameDrawn }
         super.onCreate(savedInstanceState)
+        // Fork: this app's own copy joins the shared operator-copy catalog (res/raw-zh-rTW).
+        com.opencapture.monitorui.l10n.UiCatalog.register(R.raw.openpocketcine_ui_catalog)
         // One model per task: a recreated activity keeps the session; finishing closes it.
         model = retainedMonitorRoot { createModel().also(AppModel::prepareStartup) }
         model.gimbalGamepad.ensureListening(this, model)
