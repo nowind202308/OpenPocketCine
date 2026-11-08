@@ -3,6 +3,7 @@
 package com.opencapture.openpocketcine.media
 
 import com.opencapture.monitorui.MonitorConfirmPopup
+import com.opencapture.monitorui.l10n.Text
 import com.opencapture.opencine.media3.Media3PlaybackOwner
 import com.opencapture.opencine.cameracontrols.chromeClickable
 import com.opencapture.opencine.vocabulary.CameraStatus
@@ -48,7 +49,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect

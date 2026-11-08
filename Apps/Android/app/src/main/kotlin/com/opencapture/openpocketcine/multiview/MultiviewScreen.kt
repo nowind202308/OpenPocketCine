@@ -2,6 +2,7 @@ package com.opencapture.openpocketcine.multiview
 
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
+import com.opencapture.monitorui.l10n.Text
 import com.opencapture.opencine.vocabulary.CameraStatus
 import com.opencapture.openpocketcine.pairing.lastSSID
 import com.opencapture.openpocketcine.pairing.POCKET_STATION_BRAND
@@ -25,7 +26,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
