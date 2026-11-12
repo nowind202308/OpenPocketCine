@@ -100,7 +100,10 @@ android {
             // debug build can never replace it. A distinct id installs beside it and
             // keeps both available for side-by-side qualification on one body.
             applicationIdSuffix = ".debug"
-            versionNameSuffix = "-debug"
+            // Fork: CI debug builds carry the Actions run number, so the installed build can be
+            // matched to its run (app info, long-press on the floating record key).
+            versionNameSuffix = "-debug" +
+                (providers.environmentVariable("GITHUB_RUN_NUMBER").orNull?.let { ".r$it" } ?: "")
         }
         release {
             isMinifyEnabled = true

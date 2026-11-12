@@ -13,7 +13,8 @@ Code: `Apps/Android/app/src/main/kotlin/com/opencapture/openpocketcine/bridge/`.
 The floating macro shows a 52 dp record key under the main button (above it when there
 is no room). Gray: camera not LIVE (tap does nothing). Dark `● 錄`: idle, tap starts.
 Red `■ 停`: recording, tap stops. It calls the same `pressShutter` as the rec lamp; the
-camera's reported state, not the tap, decides what M2 is told.
+camera's reported state, not the tap, decides what M2 is told. Long-press shows the
+installed build (`versionName`; CI debug builds end in `.r<Actions run number>`).
 
 ## Wire contract v1
 

@@ -17,6 +17,7 @@ import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.content.getSystemService
 import com.opencapture.openpocketcine.R
 
@@ -78,6 +79,11 @@ class FloatingMacroOverlay(
             setOnClickListener {
                 performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                 record()
+            }
+            // Fork: long-press says which build is installed.
+            setOnLongClickListener {
+                Toast.makeText(context, buildLabel(), Toast.LENGTH_LONG).show()
+                true
             }
         }
     }
@@ -173,7 +179,7 @@ class FloatingMacroOverlay(
 
     private fun renderRecord(view: TextView, camera: MacroCameraState) {
         val recording = camera.live && camera.recording
-        view.isEnabled = camera.live
+        // Stays enabled offline so long-press still shows the build; the record action checks LIVE.
         view.text = context.getString(if (recording) R.string.macro_record_stop else R.string.macro_record_start)
         view.contentDescription = view.text
         view.background = GradientDrawable().apply {
@@ -387,6 +393,13 @@ class FloatingMacroOverlay(
             (if (touchable) 0 else WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE),
         PixelFormat.TRANSLUCENT,
     ).apply { gravity = Gravity.TOP or Gravity.START }
+
+    private fun buildLabel(): String {
+        val version = runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull() ?: "?"
+        return context.getString(R.string.macro_record_build, version)
+    }
 
     private fun screenSize(): Pair<Int, Int> =
         context.resources.displayMetrics.let { it.widthPixels to it.heightPixels }

@@ -54,4 +54,5 @@
     <string name="ble_probe_running">實驗中…</string>
     <string name="ble_probe_copy">複製結果</string>
     <string name="ble_probe_no_session">請先從 App 主畫面連上相機，再回到這裡。</string>
+    <string name="macro_record_build">OpenPocketCine %1$s</string>
 </resources>
