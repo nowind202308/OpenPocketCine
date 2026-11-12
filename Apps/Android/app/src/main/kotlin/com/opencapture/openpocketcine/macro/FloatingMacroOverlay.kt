@@ -44,6 +44,8 @@ class FloatingMacroOverlay(
     private val onOpenSettings: () -> Unit,
     /** Zoom set up from the menu and run on a tap; null makes the zoom ring inert. */
     private val zoom: ZoomDriver?,
+    /** Starts or stops recording (fork, storyboard M2); null hides the record button. */
+    private val onRecord: (() -> Unit)? = null,
     /** Remembered ISO / EV / frame rate per preset, shown on rings 2 and 3. */
     private val choices: (MacroPreset) -> MacroChoices = { MacroChoices() },
     /** A ring-3 pick: remember it and apply the preset. */
@@ -62,6 +64,24 @@ class FloatingMacroOverlay(
         elevation = dp(6).toFloat()
     }
     private val buttonParams = overlayParams(buttonSize, buttonSize, touchable = true)
+
+    /** One tap starts or stops recording; it follows the main button, below it (above near the bottom). */
+    private val recordSize = dp(52)
+    private val recordGap = dp(10)
+    private val recordButton: TextView? = onRecord?.let { record ->
+        TextView(context).apply {
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            typeface = Typeface.DEFAULT_BOLD
+            elevation = dp(6).toFloat()
+            setOnClickListener {
+                performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                record()
+            }
+        }
+    }
+    private val recordParams = overlayParams(recordSize, recordSize, touchable = true)
 
     private val radial = RadialMenuView(context).apply {
         onTapRelease = ::finish
@@ -107,6 +127,7 @@ class FloatingMacroOverlay(
         buttonParams.x = saved?.first ?: FloatingMacroLogic.snapX(screen.first, buttonSize, screen.first)
         buttonParams.y = restY(saved?.second ?: (screen.second / 3))
         windows.addView(button, buttonParams)
+        recordButton?.let { renderRecord(it, lastCamera); placeRecord(); windows.addView(it, recordParams) }
         shown = true
     }
 
@@ -114,6 +135,7 @@ class FloatingMacroOverlay(
         zoom?.stop()
         closeRadial()
         if (shown) windows.removeView(button)
+        if (shown) recordButton?.let { windows.removeView(it) }
         shown = false
     }
 
@@ -125,6 +147,7 @@ class FloatingMacroOverlay(
         buttonParams.x = FloatingMacroLogic.snapX(buttonParams.x, buttonSize, screen.first)
         buttonParams.y = restY(buttonParams.y)
         windows.updateViewLayout(button, buttonParams)
+        followRecord()
     }
 
     fun render(tone: FloatingTone, camera: MacroCameraState, running: String?, note: String?, armed: ZoomArm?) {
@@ -145,6 +168,41 @@ class FloatingMacroOverlay(
             }
         }
         if (radialShown) radial.update(items(), status())
+        recordButton?.let { renderRecord(it, camera) }
+    }
+
+    private fun renderRecord(view: TextView, camera: MacroCameraState) {
+        val recording = camera.live && camera.recording
+        view.isEnabled = camera.live
+        view.text = context.getString(if (recording) R.string.macro_record_stop else R.string.macro_record_start)
+        view.contentDescription = view.text
+        view.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(
+                when {
+                    !camera.live -> Color.argb(150, 90, 90, 90)
+                    recording -> Color.argb(235, 200, 30, 30)
+                    else -> Color.argb(210, 40, 40, 40)
+                },
+            )
+            setStroke(dp(2), if (recording) Color.WHITE else Color.argb(230, 220, 50, 50))
+        }
+    }
+
+    /** Below the main button, or above it when there is no room. */
+    private fun placeRecord() {
+        val screenH = screenSize().second
+        val left = buttonParams.x + (buttonSize - recordSize) / 2
+        val below = buttonParams.y + buttonSize + recordGap
+        recordParams.x = left
+        recordParams.y = if (below + recordSize <= screenH) below else buttonParams.y - recordGap - recordSize
+    }
+
+    private fun followRecord() {
+        val view = recordButton ?: return
+        if (!shown) return
+        placeRecord()
+        windows.updateViewLayout(view, recordParams)
     }
 
     private fun items(): List<RadialNode> =
@@ -262,6 +320,7 @@ class FloatingMacroOverlay(
                         buttonParams.x = startX + dx.toInt()
                         buttonParams.y = startY + dy.toInt()
                         windows.updateViewLayout(button, buttonParams)
+                        followRecord()
                     } else if (radialShown) {
                         radial.track(event.rawX, event.rawY)
                     }
@@ -293,6 +352,7 @@ class FloatingMacroOverlay(
             buttonParams.x = FloatingMacroLogic.snapX(buttonParams.x, buttonSize, screen.first)
             buttonParams.y = restY(buttonParams.y)
             windows.updateViewLayout(button, buttonParams)
+            followRecord()
             MacroPrefs.setButtonPosition(context, buttonParams.x, buttonParams.y)
             moving = false
         }

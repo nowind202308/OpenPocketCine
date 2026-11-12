@@ -8,6 +8,8 @@
     <string name="macro_glyph_offline">離線</string>
     <string name="macro_glyph_ready">巨集</string>
     <string name="macro_glyph_recording">錄影</string>
+    <string name="macro_record_start">● 錄</string>
+    <string name="macro_record_stop">■ 停</string>
     <string name="macro_glyph_running">套用中</string>
     <string name="macro_glyph_done">✓</string>
     <string name="macro_glyph_failed">✕</string>
