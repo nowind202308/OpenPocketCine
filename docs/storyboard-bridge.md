@@ -24,7 +24,10 @@ version bump; receivers ignore unknown fields. A breaking change bumps `v`.
 
 Action `tw.nowind.sbcards.action.CAMERA_EVENT`, explicit package `tw.nowind.sbcards`.
 On Android 14+ the broadcast shares the sender's identity, so M2 can check
-`getSentFromPackage() == "com.opencapture.openpocketcine"`.
+`getSentFromPackage()` is `com.opencapture.openpocketcine` (or its `.debug` / `.perf`
+build variants, which carry an `applicationIdSuffix`). The command action string below
+is the same for every variant, so M2 sends it without `setPackage` and every installed
+variant receives it.
 
 Every message has:
 
