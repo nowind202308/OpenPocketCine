@@ -25,6 +25,7 @@ import com.opencapture.opencine.cameracontrols.MonitorLegalPage
 import com.opencapture.opencine.runtime.MonitorHDRDisplay
 import com.opencapture.opencine.vocabulary.ConnectionPhase
 import com.opencapture.openpocketcine.diagnostics.AppDiagnostics
+import com.opencapture.openpocketcine.bridge.StoryboardBridge
 import com.opencapture.openpocketcine.macro.FloatingMacroLogic
 import com.opencapture.openpocketcine.macro.FloatingMacroService
 import com.opencapture.openpocketcine.macro.MacroAttachment
@@ -103,6 +104,8 @@ open class MainActivity : ComponentActivity() {
     private lateinit var bleProbe: SessionBleProbe
     /** Continuous zoom from the floating menu's 縮放 ring. */
     private lateinit var macroZoom: ZoomDriver
+    /** Talks to the storyboard field app (M2); lives as long as this activity's session. */
+    private lateinit var storyboardBridge: StoryboardBridge
     /** The overlay-permission hint shows once per activity, not on every reconnect. */
     private var macroPermissionHinted = false
     var hideSystemNavigation = false
@@ -149,6 +152,7 @@ open class MainActivity : ComponentActivity() {
             camera = macroCamera.state,
             running = macroRunner.running,
             zoom = macroZoom,
+            record = { if (model.session.phase == ConnectionPhase.LIVE) model.pressShutter() },
             choices = macroChoices,
             remember = { preset, choices -> MacroPrefs.setChoices(this, preset.name, choices) },
             start = runMacro,
@@ -158,6 +162,20 @@ open class MainActivity : ComponentActivity() {
             model.session.phaseFlow.collect { if (it != ConnectionPhase.LIVE) macroZoom.stop() }
         }
         MacroHub.attach(macroAttachment)
+        // Storyboard field app (M2): recording start/stop events out, record commands in.
+        storyboardBridge = StoryboardBridge(applicationContext, macroCamera.state, model::pressShutter, macroScope)
+            .also { it.start() }
+        com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.session = model.session
+        com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.onBorrowChanged = { borrowing ->
+            // Only matters while this activity is paused; resumed means the scene is active anyway.
+            if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) model.shell.setSceneActive(borrowing)
+        }
+        com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.gimbal =
+            object : com.opencapture.openpocketcine.bridge.GimbalPort {
+                override fun move(x: Float, y: Float) = model.updateGimbalStick(x, y)
+                override fun release() = model.endGimbalStick()
+                override fun recenter() = model.session.recenterGimbal()
+            }
         bleProbe = SessionBleProbe(model, macroScope) { macroRunner.isRunning }
         MacroHub.bleProbe = bleProbe
         FloatingMacroService.dismissed = false
@@ -200,14 +218,17 @@ open class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         if (::remoteShutter.isInitialized) remoteShutter.disarm()
-        if (::model.isInitialized) model.shell.setSceneActive(false)
+        // Fork: stay active while the storyboard companion shows the picture (see StoryboardSurfaceHub).
+        if (::model.isInitialized) model.shell.setSceneActive(com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.borrowing)
         AppDiagnostics.manualReport.setForeground(false)
+        com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.arbiter.setForeground(false)
         super.onPause()
     }
 
     override fun onResume() {
         super.onResume()
         AppDiagnostics.manualReport.setForeground(true)
+        com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.arbiter.setForeground(true)
         if (::model.isInitialized) {
             model.shell.setSceneActive(true)
             model.gimbalGamepad.ensureListening(this, model)
@@ -275,6 +296,13 @@ open class MainActivity : ComponentActivity() {
         if (::remoteShutter.isInitialized) remoteShutter.close()
         if (::macroZoom.isInitialized) macroZoom.stop()
         if (::macroAttachment.isInitialized) MacroHub.detach(macroAttachment)
+        if (::storyboardBridge.isInitialized) storyboardBridge.stop()
+        if (::model.isInitialized && com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.session === model.session &&
+            isFinishing) {
+            com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.session = null
+            com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.onBorrowChanged = null
+            com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.gimbal = null
+        }
         if (::bleProbe.isInitialized && MacroHub.bleProbe === bleProbe) MacroHub.bleProbe = null
         macroScope.cancel()
         super.onDestroy()

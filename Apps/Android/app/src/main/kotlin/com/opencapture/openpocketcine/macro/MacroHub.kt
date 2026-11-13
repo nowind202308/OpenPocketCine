@@ -23,6 +23,8 @@ class MacroAttachment(
     val running: StateFlow<String?>,
     /** Continuous zoom for the 縮放 ring; null where the camera cannot zoom. */
     val zoom: ZoomDriver? = null,
+    /** Starts or stops recording through the app's shutter path; null hides the record button. */
+    val record: (() -> Unit)? = null,
     /** What the operator picked for a preset in the menu (ISO, EV, frame rate). */
     val choices: (MacroPreset) -> MacroChoices = { MacroChoices() },
     private val remember: (MacroPreset, MacroChoices) -> Unit = { _, _ -> },

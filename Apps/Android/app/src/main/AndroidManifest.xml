@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.INTERNET" />
@@ -74,6 +75,12 @@
             android:exported="false"
             android:label="@string/macro_settings_title"
             android:theme="@style/Theme.OpenPocketCine" />
+        <!-- Fork: lends the live picture to the storyboard companion (M2). Exported for binding;
+            every call checks the caller is tw.nowind.sbcards. -->
+        <service
+            android:name=".bridge.StoryboardSurfaceService"
+            android:exported="true"
+            tools:ignore="ExportedService" />
         <service
             android:name=".macro.FloatingMacroService"
             android:exported="false"

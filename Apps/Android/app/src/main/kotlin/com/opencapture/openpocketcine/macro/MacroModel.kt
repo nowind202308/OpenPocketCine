@@ -72,6 +72,10 @@ data class MacroCameraState(
     val availableFps: List<Int> = emptyList(),
     /** Legal fixed ISO indices; empty until the camera says. */
     val availableIsoIndices: List<Int> = emptyList(),
+    /** Raw shooting mode as the session reports it (video, slow motion, timelapse…); for the storyboard bridge. */
+    val shootingMode: String = "",
+    /** Raw resolution code; for the storyboard bridge. */
+    val resolutionCode: String = "",
 )
 
 /** What the runner drives. The app implements it over the live session. */
