@@ -96,12 +96,24 @@ Binder interface `com.opencapture.openpocketcine.storyboard.Surface`, raw transa
 | `+1` detach | — | same |
 | `+2` status | — | same |
 | `+3` diagnostics | — | no-exception, `int result`, `int wire version`, `String` (phase, output choice, decoder input/shown/errors) |
+| `+4` presented (one-way) | `long` SurfaceTexture timestamp of a displayed frame | — |
+| `+5` stick (one-way) | `float x, float y`, −1…1, right / up positive (as the on-screen stick) | — |
+| `+6` stick release (one-way) | — | — |
+| `+7` recenter (one-way) | — | — |
 
 Results: `0` ok (live), `1` no session (activity not running), `2` session not live, `3` bad
 surface. Every call checks `getPackagesForUid(getCallingUid())` contains `tw.nowind.sbcards`;
 others are refused. M2 must call detach synchronously from `surfaceDestroyed` (a dead output
 wedges MediaCodec). A death link on the client token, unbind and service destroy also return
 the picture.
+
+While M2 holds a surface the activity keeps the scene **active** even when paused: M2 reports
+each displayed frame's timestamp (the decoder's release stamp, returned by
+`SurfaceTexture.getTimestamp`) through `presented`, so the feed watchdog and first-picture checks
+see a live picture, and gimbal stick commands (blocked while a paused scene awaits foreground
+recovery) are allowed. Stick values go through `AppModel.updateGimbalStick`, so sensitivity,
+inversion, dead zone, mirror and the operator lock apply as for the on-screen stick. When M2
+lets go while the activity is paused, the scene becomes inactive as before.
 
 The camera network stays usable in the background only while the floating macro's
 `connectedDevice` foreground service runs; without it Android blocks the sockets and the

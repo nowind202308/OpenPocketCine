@@ -22,11 +22,31 @@ object StoryboardSurfaceHub {
 
     val arbiter = SurfaceArbiter<Surface> { surface -> session?.attachSurface(surface) }
 
+    /**
+     * The activity's answer to "M2 started or stopped borrowing": while M2 shows the picture the
+     * scene stays active (the connectedDevice service keeps the camera network usable), so gimbal
+     * commands are allowed and no foreground recovery runs on return.
+     */
+    @Volatile
+    var onBorrowChanged: ((Boolean) -> Unit)? = null
+
+    /** Gimbal stick lent by the activity (sensitivity, mirror, lock and mapping applied there). */
+    @Volatile
+    var gimbal: GimbalPort? = null
+
+    val borrowing: Boolean get() = arbiter.hasExternal
+
     /** Called by the live view instead of `session.attachSurface`. */
     fun attachLocal(session: PocketCameraSession, surface: Surface?) {
         this.session = session
         arbiter.setLocal(surface)
     }
+}
+
+interface GimbalPort {
+    fun move(x: Float, y: Float)
+    fun release()
+    fun recenter()
 }
 
 /**
@@ -70,6 +90,27 @@ class StoryboardSurfaceService : Service() {
                     RESULT_OK
                 }
                 STATUS -> status()
+                PRESENTED -> {
+                    // M2 shows the frames: feed its presentation stamps to the decoder so the
+                    // watchdog and first-picture checks see a live picture.
+                    val stamp = data.readLong()
+                    if (StoryboardSurfaceHub.arbiter.showingExternal) StoryboardSurfaceHub.session?.decoder?.notePresented(stamp)
+                    RESULT_OK
+                }
+                STICK -> {
+                    val x = data.readFloat().coerceIn(-1f, 1f)
+                    val y = data.readFloat().coerceIn(-1f, 1f)
+                    main.post { StoryboardSurfaceHub.gimbal?.move(x, y) }
+                    RESULT_OK
+                }
+                STICK_RELEASE -> {
+                    main.post { StoryboardSurfaceHub.gimbal?.release() }
+                    RESULT_OK
+                }
+                RECENTER -> {
+                    main.post { StoryboardSurfaceHub.gimbal?.recenter() }
+                    RESULT_OK
+                }
                 else -> return super.onTransact(code, data, reply, flags)
             }
             reply?.writeNoException()
@@ -114,6 +155,7 @@ class StoryboardSurfaceService : Service() {
         borrowed = surface
         StoryboardSurfaceHub.arbiter.setExternal(surface)
         old?.release()
+        if (old == null) main.post { StoryboardSurfaceHub.onBorrowChanged?.invoke(true) }
         Log.i(TAG, "m2 borrowed the live picture")
         return status()
     }
@@ -126,7 +168,11 @@ class StoryboardSurfaceService : Service() {
         token = null
         // Synchronous: M2 calls DETACH from surfaceDestroyed and waits for this to return.
         StoryboardSurfaceHub.arbiter.setExternal(null)
-        main.post { surface.release() }
+        main.post {
+            surface.release()
+            StoryboardSurfaceHub.gimbal?.release()
+            StoryboardSurfaceHub.onBorrowChanged?.invoke(false)
+        }
         Log.i(TAG, "m2 returned the live picture ($why)")
     }
 
@@ -138,6 +184,12 @@ class StoryboardSurfaceService : Service() {
         const val DETACH = IBinder.FIRST_CALL_TRANSACTION + 1
         const val STATUS = IBinder.FIRST_CALL_TRANSACTION + 2
         const val DIAG = IBinder.FIRST_CALL_TRANSACTION + 3
+        /** One-way: `long` SurfaceTexture timestamp of a frame M2 displayed. */
+        const val PRESENTED = IBinder.FIRST_CALL_TRANSACTION + 4
+        /** One-way: `float x, float y` in -1…1 (right, up positive), as the on-screen stick. */
+        const val STICK = IBinder.FIRST_CALL_TRANSACTION + 5
+        const val STICK_RELEASE = IBinder.FIRST_CALL_TRANSACTION + 6
+        const val RECENTER = IBinder.FIRST_CALL_TRANSACTION + 7
         const val RESULT_OK = 0
         const val RESULT_NO_SESSION = 1
         const val RESULT_NOT_LIVE = 2

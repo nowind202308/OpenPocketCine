@@ -46,6 +46,9 @@ class SurfaceArbiter<T : Any>(private val apply: (T?) -> Unit) {
     } + (if (foreground) " fg" else " bg")
 
     @get:Synchronized
+    val hasExternal: Boolean get() = external != null
+
+    @get:Synchronized
     val showingExternal: Boolean get() = external != null && applied === external
 
     private fun update() {

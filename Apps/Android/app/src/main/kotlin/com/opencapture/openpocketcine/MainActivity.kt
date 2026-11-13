@@ -166,6 +166,16 @@ open class MainActivity : ComponentActivity() {
         storyboardBridge = StoryboardBridge(applicationContext, macroCamera.state, model::pressShutter, macroScope)
             .also { it.start() }
         com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.session = model.session
+        com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.onBorrowChanged = { borrowing ->
+            // Only matters while this activity is paused; resumed means the scene is active anyway.
+            if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) model.shell.setSceneActive(borrowing)
+        }
+        com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.gimbal =
+            object : com.opencapture.openpocketcine.bridge.GimbalPort {
+                override fun move(x: Float, y: Float) = model.updateGimbalStick(x, y)
+                override fun release() = model.endGimbalStick()
+                override fun recenter() = model.session.recenterGimbal()
+            }
         bleProbe = SessionBleProbe(model, macroScope) { macroRunner.isRunning }
         MacroHub.bleProbe = bleProbe
         FloatingMacroService.dismissed = false
@@ -208,7 +218,8 @@ open class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         if (::remoteShutter.isInitialized) remoteShutter.disarm()
-        if (::model.isInitialized) model.shell.setSceneActive(false)
+        // Fork: stay active while the storyboard companion shows the picture (see StoryboardSurfaceHub).
+        if (::model.isInitialized) model.shell.setSceneActive(com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.borrowing)
         AppDiagnostics.manualReport.setForeground(false)
         com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.arbiter.setForeground(false)
         super.onPause()
@@ -287,7 +298,11 @@ open class MainActivity : ComponentActivity() {
         if (::macroAttachment.isInitialized) MacroHub.detach(macroAttachment)
         if (::storyboardBridge.isInitialized) storyboardBridge.stop()
         if (::model.isInitialized && com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.session === model.session &&
-            isFinishing) com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.session = null
+            isFinishing) {
+            com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.session = null
+            com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.onBorrowChanged = null
+            com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.gimbal = null
+        }
         if (::bleProbe.isInitialized && MacroHub.bleProbe === bleProbe) MacroHub.bleProbe = null
         macroScope.cancel()
         super.onDestroy()
