@@ -15,6 +15,7 @@ platforms it touches; a skipped job counts as passed in the gate.
 | Native Swift/iOS | Swift packages, one `build-for-testing`, unit tests without rebuilding on one simulator (serial: `-parallel-testing-enabled NO`), Watch build; SwiftPM and compilation caches from main. The job summary lists per-suite times for the package and unit tests |
 | Android | three parallel jobs: JVM tests (`test :opencine:monitor-ui:testDebugUnitTest`); debug build and lint (`assembleDebug lint :opencine:monitor-ui:lint`); release bundle (`:app:verifyReleaseComponentRegistrars`: R8 release bundle and the registrar check). Together they schedule exactly the task graph of the former single Gradle step, and the gate fails if any of them fails. Each job summary lists per-task times (`scripts/ci-gradle-task-timing.gradle`), and the JVM tests job per-suite times |
 | Protocol handbook | static site build and links |
+| Dev release (fork) | after a passing Android run from this repository (main push or same-repo pull request), publishes the debug APK as prerelease `v<versionName>-debug.r<run>` for Obtainium on the test phones; keeps the newest five; not part of the gate |
 
 No simulator UI suite, iPad oracle, portrait header layout matrix
 (`MonitorPortraitHeaderClearanceTests`) or quarantined test runs here, and pull requests no longer

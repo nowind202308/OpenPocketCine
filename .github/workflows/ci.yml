@@ -569,6 +569,54 @@ jobs:
           npm --prefix handbook run build
           python3 scripts/check-handbook-links.py --base /openpocketcine/docs
 
+  dev-release:
+    name: Dev release (fork)
+    # Fork: publish each debug APK built from this repository (main pushes and same-repo pull
+    # requests) as a prerelease, so Obtainium on the test phones installs it without a manual
+    # download. Keeps the newest five; never feeds the gate.
+    needs: android
+    if: >-
+      ${{ needs.android.result == 'success' &&
+          (github.event_name == 'push' ||
+           (github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository)) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: Apps/Android/gradle.properties
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_NUMBER: ${{ github.run_number }}
+          TARGET: ${{ github.event.pull_request.head.sha || github.sha }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          base=$(sed -n 's/^openpocketcine.versionName=//p' Apps/Android/gradle.properties)
+          tag="v${base}-debug.r${RUN_NUMBER}"
+          mkdir -p apk
+          gh run download "$RUN_ID" -n openpocketcine-debug-apk -D apk
+          src=$(find apk -name '*.apk' | head -n 1)
+          out="OpenPocketCine-Dev-${base}-debug.r${RUN_NUMBER}.apk"
+          cp "$src" "$out"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --prerelease --target "$TARGET" \
+              --title "Dev ${base}-debug.r${RUN_NUMBER} (${BRANCH})" \
+              --notes "Debug build from ${BRANCH} @ ${TARGET:0:7}, CI run ${RUN_NUMBER}. Fixed debug key; installs over earlier Dev builds."
+          fi
+          gh release upload "$tag" "$out" --clobber
+          gh release list --limit 100 --json tagName,isPrerelease,createdAt \
+            --jq '[.[] | select(.isPrerelease and (.tagName | test("-debug\\.r[0-9]+$")))] | sort_by(.createdAt) | reverse | .[5:] | .[].tagName' |
+            while read -r old; do gh release delete "$old" --yes --cleanup-tag; done
+
   gate:
     name: CI gate
     # The single required status check on `main` (name must stay "CI gate"). `native`,
