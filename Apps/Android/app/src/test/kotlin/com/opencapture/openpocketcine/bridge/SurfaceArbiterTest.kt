@@ -19,7 +19,7 @@ class SurfaceArbiterTest {
         assertTrue(arbiter.showingExternal)
         // Back to the app: its new surface wins at once.
         arbiter.setLocal("app2")
-        assertEquals(listOf("app", "m2", "app2"), applied)
+        assertEquals(listOf<String?>("app", "m2", "app2"), applied)
     }
 
     @Test
@@ -27,7 +27,7 @@ class SurfaceArbiterTest {
         arbiter.setExternal("m2")
         assertEquals("m2", applied.last())
         assertEquals(null, arbiter.setExternal(null))
-        assertEquals(listOf("m2", null), applied)
+        assertEquals(listOf<String?>("m2", null), applied)
     }
 
     @Test
