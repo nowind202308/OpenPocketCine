@@ -165,6 +165,7 @@ open class MainActivity : ComponentActivity() {
         // Storyboard field app (M2): recording start/stop events out, record commands in.
         storyboardBridge = StoryboardBridge(applicationContext, macroCamera.state, model::pressShutter, macroScope)
             .also { it.start() }
+        com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.session = model.session
         bleProbe = SessionBleProbe(model, macroScope) { macroRunner.isRunning }
         MacroHub.bleProbe = bleProbe
         FloatingMacroService.dismissed = false
@@ -283,6 +284,8 @@ open class MainActivity : ComponentActivity() {
         if (::macroZoom.isInitialized) macroZoom.stop()
         if (::macroAttachment.isInitialized) MacroHub.detach(macroAttachment)
         if (::storyboardBridge.isInitialized) storyboardBridge.stop()
+        if (::model.isInitialized && com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.session === model.session &&
+            isFinishing) com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.session = null
         if (::bleProbe.isInitialized && MacroHub.bleProbe === bleProbe) MacroHub.bleProbe = null
         macroScope.cancel()
         super.onDestroy()

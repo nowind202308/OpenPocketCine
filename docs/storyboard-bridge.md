@@ -78,8 +78,37 @@ Action `com.opencapture.openpocketcine.action.STORYBOARD_COMMAND`, payload:
 `sent` means the shutter was pressed, not that the camera started; the following
 `rec_start` / `rec_stop` event is the confirmation.
 
+## Live picture lending
+
+M2 can show the live picture in its own window while this app is behind it. M2 binds the
+exported `com.opencapture.openpocketcine.bridge.StoryboardSurfaceService` (explicit component,
+any of the three package variants) and hands over its own `Surface`. The live decoder switches
+its output there with `setOutputSurface` (`PocketCameraSession.attachSurface`): no re-encode, no
+keyframe request, one decode. This app's own live view always wins while it has a surface
+(`SurfaceArbiter`), so the picture moves back when the operator returns here.
+
+Binder interface `com.opencapture.openpocketcine.storyboard.Surface`, raw transactions (no AIDL):
+
+| Code | Request (after the interface token) | Reply |
+| --- | --- | --- |
+| `FIRST_CALL_TRANSACTION` attach | client token binder, `int 1`, `Surface` parcel | no-exception, `int result`, `int wire version` |
+| `+1` detach | — | same |
+| `+2` status | — | same |
+
+Results: `0` ok (live), `1` no session (activity not running), `2` session not live, `3` bad
+surface. Every call checks `getPackagesForUid(getCallingUid())` contains `tw.nowind.sbcards`;
+others are refused. M2 must call detach synchronously from `surfaceDestroyed` (a dead output
+wedges MediaCodec). A death link on the client token, unbind and service destroy also return
+the picture.
+
+The camera network stays usable in the background only while the floating macro's
+`connectedDevice` foreground service runs; without it Android blocks the sockets and the
+borrowed picture freezes.
+
 ## Verification
 
 Unit: `StoryboardBridgeLogicTest`. Physical (pending): floating key start/stop on a
 Pocket 4 Pro, M2 receives each event, M2 command starts and stops, a non-M2 sender is
-ignored, link loss mid-take sends `rec_lost`.
+ignored, link loss mid-take sends `rec_lost`. Picture lending: M2 shows the picture with this app
+behind it, switching back and forth keeps a picture on both sides, M2 killed mid-view returns
+the picture (unit: `SurfaceArbiterTest`).

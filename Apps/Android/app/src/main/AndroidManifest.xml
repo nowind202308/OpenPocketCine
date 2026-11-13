@@ -74,6 +74,11 @@
             android:exported="false"
             android:label="@string/macro_settings_title"
             android:theme="@style/Theme.OpenPocketCine" />
+        <!-- Fork: lends the live picture to the storyboard companion (M2). Exported for binding;
+            every call checks the caller is tw.nowind.sbcards. -->
+        <service
+            android:name=".bridge.StoryboardSurfaceService"
+            android:exported="true" />
         <service
             android:name=".macro.FloatingMacroService"
             android:exported="false"
