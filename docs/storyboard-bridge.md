@@ -84,8 +84,9 @@ M2 can show the live picture in its own window while this app is behind it. M2 b
 exported `com.opencapture.openpocketcine.bridge.StoryboardSurfaceService` (explicit component,
 any of the three package variants) and hands over its own `Surface`. The live decoder switches
 its output there with `setOutputSurface` (`PocketCameraSession.attachSurface`): no re-encode, no
-keyframe request, one decode. This app's own live view always wins while it has a surface
-(`SurfaceArbiter`), so the picture moves back when the operator returns here.
+keyframe request, one decode. While this app is resumed its own live view wins; while it is paused the borrowed
+surface wins, even though the live view may keep its own surface alive (`SurfaceArbiter`). The
+picture moves back when the operator returns here.
 
 Binder interface `com.opencapture.openpocketcine.storyboard.Surface`, raw transactions (no AIDL):
 
@@ -94,6 +95,7 @@ Binder interface `com.opencapture.openpocketcine.storyboard.Surface`, raw transa
 | `FIRST_CALL_TRANSACTION` attach | client token binder, `int 1`, `Surface` parcel | no-exception, `int result`, `int wire version` |
 | `+1` detach | — | same |
 | `+2` status | — | same |
+| `+3` diagnostics | — | no-exception, `int result`, `int wire version`, `String` (phase, output choice, decoder input/shown/errors) |
 
 Results: `0` ok (live), `1` no session (activity not running), `2` session not live, `3` bad
 surface. Every call checks `getPackagesForUid(getCallingUid())` contains `tw.nowind.sbcards`;

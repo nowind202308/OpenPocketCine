@@ -37,4 +37,14 @@ class SurfaceArbiterTest {
         arbiter.setExternal(null)
         assertEquals(listOf<String?>("app"), applied)
     }
+
+    @Test
+    fun inTheBackgroundTheBorrowedSurfaceWinsEvenIfTheAppKeepsItsOwn() {
+        arbiter.setLocal("app")
+        arbiter.setExternal("m2")
+        arbiter.setForeground(false)
+        assertTrue(arbiter.showingExternal)
+        arbiter.setForeground(true)
+        assertEquals(listOf<String?>("app", "m2", "app"), applied)
+    }
 }

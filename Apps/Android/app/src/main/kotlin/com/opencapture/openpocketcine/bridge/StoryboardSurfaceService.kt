@@ -52,6 +52,13 @@ class StoryboardSurfaceService : Service() {
                 return false
             }
             data.enforceInterface(DESCRIPTOR)
+            if (code == DIAG) {
+                reply?.writeNoException()
+                reply?.writeInt(status())
+                reply?.writeInt(WIRE_VERSION)
+                reply?.writeString(diagnostics())
+                return true
+            }
             val result = when (code) {
                 ATTACH -> {
                     val clientToken = data.readStrongBinder()
@@ -89,6 +96,14 @@ class StoryboardSurfaceService : Service() {
         return if (session.phaseFlow.value == ConnectionPhase.LIVE) RESULT_OK else RESULT_NOT_LIVE
     }
 
+    /** One line for M2's test screen: phase, output choice, decoder input and errors. */
+    private fun diagnostics(): String {
+        val session = StoryboardSurfaceHub.session ?: return "no session"
+        val d = session.decoder
+        return "phase=${session.phaseFlow.value.name.lowercase()} out=${StoryboardSurfaceHub.arbiter.describe()} " +
+            "in=${d.framesEnqueued.get()} shown=${d.framesPresented.get()} err=${d.decoderErrors.get()}"
+    }
+
     @Synchronized
     private fun attach(clientToken: IBinder?, surface: Surface?): Int {
         if (surface == null || !surface.isValid) return RESULT_BAD_SURFACE
@@ -122,6 +137,7 @@ class StoryboardSurfaceService : Service() {
         const val ATTACH = IBinder.FIRST_CALL_TRANSACTION
         const val DETACH = IBinder.FIRST_CALL_TRANSACTION + 1
         const val STATUS = IBinder.FIRST_CALL_TRANSACTION + 2
+        const val DIAG = IBinder.FIRST_CALL_TRANSACTION + 3
         const val RESULT_OK = 0
         const val RESULT_NO_SESSION = 1
         const val RESULT_NOT_LIVE = 2

@@ -210,12 +210,14 @@ open class MainActivity : ComponentActivity() {
         if (::remoteShutter.isInitialized) remoteShutter.disarm()
         if (::model.isInitialized) model.shell.setSceneActive(false)
         AppDiagnostics.manualReport.setForeground(false)
+        com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.arbiter.setForeground(false)
         super.onPause()
     }
 
     override fun onResume() {
         super.onResume()
         AppDiagnostics.manualReport.setForeground(true)
+        com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.arbiter.setForeground(true)
         if (::model.isInitialized) {
             model.shell.setSceneActive(true)
             model.gimbalGamepad.ensureListening(this, model)
