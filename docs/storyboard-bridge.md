@@ -100,6 +100,10 @@ Binder interface `com.opencapture.openpocketcine.storyboard.Surface`, raw transa
 | `+5` stick (one-way) | `float x, float y`, −1…1, right / up positive (as the on-screen stick) | — |
 | `+6` stick release (one-way) | — | — |
 | `+7` recenter (one-way) | — | — |
+| `+8` zoom hold (one-way) | `int zoomIn` (1 in, 0 out), `int level` 1…7, `float limit` (≤ 0: none) | — |
+| `+9` zoom stop (one-way) | — | — |
+| `+10` zoom to (one-way) | `float factor`, `int durationMs` (0: at once, at most 120 000) | — |
+| `+11` zoom query | — | no-exception, `int result`, `int wire version`, `float factor`, `int n` + `n` × `float` zoom stops, `int flags` (1 recording, 2 a bridge zoom is moving), `String` zoom-in refusal, `String` zoom-out refusal |
 
 Results: `0` ok (live), `1` no session (activity not running), `2` session not live, `3` bad
 surface. Every call checks `getPackagesForUid(getCallingUid())` contains `tw.nowind.sbcards`;
@@ -114,6 +118,27 @@ see a live picture, and gimbal stick commands (blocked while a paused scene awai
 recovery) are allowed. Stick values go through `AppModel.updateGimbalStick`, so sensitivity,
 inversion, dead zone, mirror and the operator lock apply as for the on-screen stick. When M2
 lets go while the activity is paused, the scene becomes inactive as before.
+
+### Zoom (wire version 2)
+
+`BridgeZoom` runs the moves; the activity lends the session through `StoryboardSurfaceHub.zoom`.
+
+- **Hold** is the camera's own held zoom at a native speed 1…7. M2 repeats the request while the
+  key is down (every 250 ms); a hold that is not repeated within 700 ms stops by itself. With a
+  `limit` the hold stops a little short of that factor (the margin grows with the speed) and
+  lands on it with one position write. M2 uses it to pause before the 3× lens switch while
+  recording.
+- **To** writes positions along a path from the reported factor to the target over the duration,
+  at the same ratio every second, one write per 50 ms (the session's coalescing interval). When
+  the reported factor has not moved after 1 s, the move falls back to a held zoom toward the
+  target at a level picked from the doublings per second it still needs (the native speeds are
+  not measured, so that pick is approximate).
+- **Query** refusals are `""` (can run), `no_session`, `not_live`, `no_zoom`, `locked` (operator
+  lock) or `recording_color_lock` (D-Log2 while recording: the body cannot hop to D-Log, so it
+  cannot leave 1×). A refused request is dropped; M2 shows the reason from the query.
+
+A bridge zoom stops the floating macro's zoom. M2 letting go of the picture, or dying, stops
+a running move. An older build without these codes returns `false` from `transact`.
 
 The camera network stays usable in the background only while the floating macro's
 `connectedDevice` foreground service runs; without it Android blocks the sockets and the

@@ -34,6 +34,10 @@ object StoryboardSurfaceHub {
     @Volatile
     var gimbal: GimbalPort? = null
 
+    /** Zoom moves for M2, lent by the activity over its session. */
+    @Volatile
+    var zoom: BridgeZoom? = null
+
     val borrowing: Boolean get() = arbiter.hasExternal
 
     /** Called by the live view instead of `session.attachSurface`. */
@@ -62,6 +66,33 @@ class StoryboardSurfaceService : Service() {
     private var token: IBinder? = null
     private var borrowed: Surface? = null
     private val death = IBinder.DeathRecipient { release("m2 died") }
+    private var zoomTicking = false
+    private val zoomTick = object : Runnable {
+        override fun run() {
+            val wait = StoryboardSurfaceHub.zoom?.tick()
+            zoomTicking = wait != null
+            if (wait != null) main.postDelayed(this, wait)
+        }
+    }
+
+    /** Main thread: runs a zoom request and keeps its move ticking. */
+    private fun zoom(request: (BridgeZoom) -> Unit) = main.post {
+        val zoom = StoryboardSurfaceHub.zoom ?: return@post
+        request(zoom)
+        if (!zoomTicking) zoomTick.run()
+    }
+
+    private fun zoomQuery(reply: Parcel) {
+        val zoom = StoryboardSurfaceHub.zoom
+        val port = zoom?.port
+        val stops = port?.stops().orEmpty()
+        reply.writeFloat((port?.factor() ?: 1.0).toFloat())
+        reply.writeInt(stops.size)
+        stops.forEach { reply.writeFloat(it.toFloat()) }
+        reply.writeInt((if (port?.recording() == true) FLAG_RECORDING else 0) or (if (zoom?.moving == true) FLAG_MOVING else 0))
+        reply.writeString(if (port == null) REASON_NO_SESSION else port.refusal(true).orEmpty())
+        reply.writeString(if (port == null) REASON_NO_SESSION else port.refusal(false).orEmpty())
+    }
 
     private val binder = object : Binder() {
         override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
@@ -77,6 +108,13 @@ class StoryboardSurfaceService : Service() {
                 reply?.writeInt(status())
                 reply?.writeInt(WIRE_VERSION)
                 reply?.writeString(diagnostics())
+                return true
+            }
+            if (code == ZOOM_QUERY) {
+                reply?.writeNoException()
+                reply?.writeInt(status())
+                reply?.writeInt(WIRE_VERSION)
+                reply?.let(::zoomQuery)
                 return true
             }
             val result = when (code) {
@@ -109,6 +147,23 @@ class StoryboardSurfaceService : Service() {
                 }
                 RECENTER -> {
                     main.post { StoryboardSurfaceHub.gimbal?.recenter() }
+                    RESULT_OK
+                }
+                ZOOM_HOLD -> {
+                    val zoomIn = data.readInt() != 0
+                    val level = data.readInt()
+                    val limit = data.readFloat().toDouble()
+                    zoom { it.hold(zoomIn, level, limit) }
+                    RESULT_OK
+                }
+                ZOOM_STOP -> {
+                    zoom { it.stop() }
+                    RESULT_OK
+                }
+                ZOOM_TO -> {
+                    val factor = data.readFloat().toDouble()
+                    val durationMs = data.readInt().coerceIn(0, MAX_RAMP_MS).toLong()
+                    if (!factor.isNaN()) zoom { it.to(factor, durationMs) }
                     RESULT_OK
                 }
                 else -> return super.onTransact(code, data, reply, flags)
@@ -171,6 +226,7 @@ class StoryboardSurfaceService : Service() {
         main.post {
             surface.release()
             StoryboardSurfaceHub.gimbal?.release()
+            StoryboardSurfaceHub.zoom?.stop()
             StoryboardSurfaceHub.onBorrowChanged?.invoke(false)
         }
         Log.i(TAG, "m2 returned the live picture ($why)")
@@ -179,7 +235,7 @@ class StoryboardSurfaceService : Service() {
     companion object {
         private const val TAG = "StoryboardSurface"
         const val DESCRIPTOR = "com.opencapture.openpocketcine.storyboard.Surface"
-        const val WIRE_VERSION = 1
+        const val WIRE_VERSION = 2
         const val ATTACH = IBinder.FIRST_CALL_TRANSACTION
         const val DETACH = IBinder.FIRST_CALL_TRANSACTION + 1
         const val STATUS = IBinder.FIRST_CALL_TRANSACTION + 2
@@ -190,6 +246,20 @@ class StoryboardSurfaceService : Service() {
         const val STICK = IBinder.FIRST_CALL_TRANSACTION + 5
         const val STICK_RELEASE = IBinder.FIRST_CALL_TRANSACTION + 6
         const val RECENTER = IBinder.FIRST_CALL_TRANSACTION + 7
+        /** One-way: `int zoomIn, int level 1..7, float limit` (≤ 0: none). Repeat within 700 ms while held. */
+        const val ZOOM_HOLD = IBinder.FIRST_CALL_TRANSACTION + 8
+        const val ZOOM_STOP = IBinder.FIRST_CALL_TRANSACTION + 9
+        /** One-way: `float factor, int durationMs` (0: at once). */
+        const val ZOOM_TO = IBinder.FIRST_CALL_TRANSACTION + 10
+        const val ZOOM_QUERY = IBinder.FIRST_CALL_TRANSACTION + 11
+        const val FLAG_RECORDING = 1
+        const val FLAG_MOVING = 2
+        const val MAX_RAMP_MS = 120_000
+        const val REASON_NO_SESSION = "no_session"
+        const val REASON_NOT_LIVE = "not_live"
+        const val REASON_NO_ZOOM = "no_zoom"
+        const val REASON_LOCKED = "locked"
+        const val REASON_RECORDING_COLOR_LOCK = "recording_color_lock"
         const val RESULT_OK = 0
         const val RESULT_NO_SESSION = 1
         const val RESULT_NOT_LIVE = 2
