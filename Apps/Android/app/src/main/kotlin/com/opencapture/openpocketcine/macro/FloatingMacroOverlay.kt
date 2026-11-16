@@ -32,7 +32,10 @@ import com.opencapture.openpocketcine.R
  *   Then a tap on the button starts it and the next tap stops it; a press while it runs stops
  *   it at once. 縮放 > 解除 clears it.
  * - Tap with no zoom set up: the menu stays open; tap through the rings.
- * - Long-press without moving: the button lifts and can be dragged to another edge.
+ * - Long-press without moving: the button lifts and can be dragged to another edge; let go past
+ *   the edge and it folds to a thin tab there (the record key hides). A tap on the tab opens it.
+ * - While the storyboard companion (M2) shows the picture in its own screen the button folds to
+ *   the tab by itself and opens again when M2 lets go; a tap opens it there for that while.
  *
  * The last sector opens these settings. All decisions come from [FloatingMacroLogic] and
  * [RadialTracker]; this class only draws and routes touches.
@@ -65,6 +68,20 @@ class FloatingMacroOverlay(
         elevation = dp(6).toFloat()
     }
     private val buttonParams = overlayParams(buttonSize, buttonSize, touchable = true)
+
+    /** The open button's resting place; the tab sits on the same edge, at the same height. */
+    private var restX = 0
+    private var restY = 0
+    private val tabWidth = dp(18)
+    private val tabHeight = dp(64)
+    private var manualCollapsed = MacroPrefs.collapsed(context)
+    private var autoCollapsed = false
+    private var openedDuringAuto = false
+    private val collapsed: Boolean
+        get() = FloatingMacroLogic.collapsed(manualCollapsed, autoCollapsed, openedDuringAuto)
+    private var recordShown = false
+    private var lastTone = FloatingTone.OFFLINE
+    private var lastArmed: ZoomArm? = null
 
     /** One tap starts or stops recording; it follows the main button, below it (above near the bottom). */
     private val recordSize = dp(52)
@@ -116,7 +133,7 @@ class FloatingMacroOverlay(
 
     init {
         // A tap (or TalkBack's click): an armed zoom runs or stops, otherwise the menu stays open.
-        button.setOnClickListener { tap() }
+        button.setOnClickListener { if (collapsed) openFromTab() else tap() }
         attachPressListener()
     }
 
@@ -130,18 +147,78 @@ class FloatingMacroOverlay(
         if (shown) return
         val screen = screenSize()
         val saved = MacroPrefs.buttonPosition(context)
-        buttonParams.x = saved?.first ?: FloatingMacroLogic.snapX(screen.first, buttonSize, screen.first)
-        buttonParams.y = restY(saved?.second ?: (screen.second / 3))
+        restX = saved?.first ?: FloatingMacroLogic.snapX(screen.first, buttonSize, screen.first)
+        restY = restY(saved?.second ?: (screen.second / 3))
+        buttonParams.x = restX
+        buttonParams.y = restY
         windows.addView(button, buttonParams)
-        recordButton?.let { renderRecord(it, lastCamera); placeRecord(); windows.addView(it, recordParams) }
         shown = true
+        applyFold()
+    }
+
+    /** M2's operate screen came to the front (true) or went away (false). */
+    fun setAutoCollapsed(on: Boolean) {
+        if (autoCollapsed == on) return
+        autoCollapsed = on
+        openedDuringAuto = false
+        applyFold()
+    }
+
+    private fun openFromTab() {
+        if (manualCollapsed) {
+            manualCollapsed = false
+            MacroPrefs.setCollapsed(context, false)
+        }
+        if (autoCollapsed) openedDuringAuto = true
+        button.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        applyFold()
+    }
+
+    /** Lays the button out open at its resting place, or as a tab on that edge. */
+    private fun applyFold() {
+        if (!shown) return
+        val screen = screenSize()
+        if (collapsed) {
+            closeRadial()
+            val onRight = restX + buttonSize / 2 >= screen.first / 2
+            buttonParams.width = tabWidth
+            buttonParams.height = tabHeight
+            buttonParams.x = if (onRight) screen.first - tabWidth else 0
+            buttonParams.y = FloatingMacroLogic.clampY(restY + (buttonSize - tabHeight) / 2, tabHeight, screen.second)
+            button.contentDescription = context.getString(R.string.macro_tab_description)
+        } else {
+            buttonParams.width = buttonSize
+            buttonParams.height = buttonSize
+            buttonParams.x = restX
+            buttonParams.y = restY
+            button.contentDescription = context.getString(R.string.macro_button_description)
+        }
+        windows.updateViewLayout(button, buttonParams)
+        paintButton()
+        syncRecord()
+    }
+
+    /** The record key shows only with the open button. */
+    private fun syncRecord() {
+        val view = recordButton ?: return
+        val want = shown && !collapsed
+        if (want && !recordShown) {
+            renderRecord(view, lastCamera)
+            placeRecord()
+            windows.addView(view, recordParams)
+            recordShown = true
+        } else if (!want && recordShown) {
+            windows.removeView(view)
+            recordShown = false
+        }
     }
 
     fun remove() {
         zoom?.stop()
         closeRadial()
         if (shown) windows.removeView(button)
-        if (shown) recordButton?.let { windows.removeView(it) }
+        if (recordShown) recordButton?.let { windows.removeView(it) }
+        recordShown = false
         shown = false
     }
 
@@ -150,17 +227,40 @@ class FloatingMacroOverlay(
         if (!shown) return
         closeRadial()
         val screen = screenSize()
-        buttonParams.x = FloatingMacroLogic.snapX(buttonParams.x, buttonSize, screen.first)
-        buttonParams.y = restY(buttonParams.y)
-        windows.updateViewLayout(button, buttonParams)
-        followRecord()
+        restX = FloatingMacroLogic.snapX(restX, buttonSize, screen.first)
+        restY = restY(restY)
+        applyFold()
     }
 
     fun render(tone: FloatingTone, camera: MacroCameraState, running: String?, note: String?, armed: ZoomArm?) {
         lastCamera = camera
         lastRunning = running
         lastNote = note
+        lastTone = tone
+        lastArmed = armed
+        paintButton()
+        if (radialShown) radial.update(items(), status())
+        if (recordShown) recordButton?.let { renderRecord(it, camera) }
+    }
+
+    private fun paintButton() {
+        val tone = lastTone
+        val armed = lastArmed
         val style = styleFor(tone)
+        if (collapsed) {
+            // A thin tab in the button's colour, so recording or a failure still shows.
+            val onRight = buttonParams.x > 0
+            button.text = if (onRight) "‹" else "›"
+            button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            val r = dp(10).toFloat()
+            button.background = GradientDrawable().apply {
+                setColor(style.color)
+                cornerRadii = if (onRight) floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r) else floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f)
+                setStroke(dp(1), Color.argb(170, 255, 255, 255))
+            }
+            return
+        }
+        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
         val zoomTone = tone == FloatingTone.ARMED || tone == FloatingTone.ZOOMING
         button.text = if (zoomTone && armed != null) FloatingMacroLogic.zoomBadge(armed) else context.getString(style.glyph)
         button.background = GradientDrawable().apply {
@@ -173,8 +273,6 @@ class FloatingMacroOverlay(
                 setStroke(dp(2), Color.argb(200, 255, 255, 255))
             }
         }
-        if (radialShown) radial.update(items(), status())
-        recordButton?.let { renderRecord(it, camera) }
     }
 
     private fun renderRecord(view: TextView, camera: MacroCameraState) {
@@ -206,7 +304,7 @@ class FloatingMacroOverlay(
 
     private fun followRecord() {
         val view = recordButton ?: return
-        if (!shown) return
+        if (!recordShown) return
         placeRecord()
         windows.updateViewLayout(view, recordParams)
     }
@@ -217,7 +315,7 @@ class FloatingMacroOverlay(
     private fun status(): String? = FloatingMacroLogic.blockReason(lastCamera, lastRunning) ?: lastNote
 
     private fun openRadial(tapMode: Boolean) {
-        if (!shown) return
+        if (!shown || collapsed) return
         if (!radialShown) {
             shownMenu = menu()
             val center = buttonCenter()
@@ -294,6 +392,14 @@ class FloatingMacroOverlay(
         }
 
         override fun onTouch(view: View, event: MotionEvent): Boolean {
+            if (collapsed) {
+                // The tab only opens: a still release is its click.
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY }
+                    MotionEvent.ACTION_UP -> if (FloatingMacroLogic.isTap(event.rawX - downX, event.rawY - downY, slop * 3)) view.performClick()
+                }
+                return true
+            }
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     stoppedZoom = zoom?.running?.value == true
@@ -355,12 +461,17 @@ class FloatingMacroOverlay(
 
         private fun settle() {
             val screen = screenSize()
-            buttonParams.x = FloatingMacroLogic.snapX(buttonParams.x, buttonSize, screen.first)
-            buttonParams.y = restY(buttonParams.y)
-            windows.updateViewLayout(button, buttonParams)
-            followRecord()
-            MacroPrefs.setButtonPosition(context, buttonParams.x, buttonParams.y)
+            val putAway = FloatingMacroLogic.draggedOffEdge(buttonParams.x, buttonSize, screen.first)
+            restX = FloatingMacroLogic.snapX(buttonParams.x, buttonSize, screen.first)
+            restY = restY(buttonParams.y)
+            MacroPrefs.setButtonPosition(context, restX, restY)
             moving = false
+            if (putAway) {
+                manualCollapsed = true
+                MacroPrefs.setCollapsed(context, true)
+                Toast.makeText(context, R.string.macro_collapsed_hint, Toast.LENGTH_SHORT).show()
+            }
+            applyFold()
         }
     }
 

@@ -165,6 +165,17 @@ object FloatingMacroLogic {
     fun snapX(x: Int, size: Int, screenWidth: Int): Int =
         if (x + size / 2 < screenWidth / 2) 0 else max(0, screenWidth - size)
 
+    /** A lifted button let go with its centre past a screen edge: the operator is putting it away. */
+    fun draggedOffEdge(x: Int, size: Int, screenWidth: Int): Boolean =
+        x + size / 2 < 0 || x + size / 2 > screenWidth
+
+    /**
+     * The button shows as an edge tab when the operator put it away, or while the storyboard
+     * companion (M2) shows the picture in its own screen, unless the operator opened it there.
+     */
+    fun collapsed(manual: Boolean, auto: Boolean, openedDuringAuto: Boolean): Boolean =
+        manual || (auto && !openedDuringAuto)
+
     fun clampY(y: Int, size: Int, screenHeight: Int): Int = y.coerceIn(0, max(0, screenHeight - size))
 
     /**

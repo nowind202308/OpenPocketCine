@@ -40,6 +40,9 @@ object StoryboardSurfaceHub {
 
     val borrowing: Boolean get() = arbiter.hasExternal
 
+    /** M2 holds the picture (its operate screen is in front): the floating macro folds to a tab. */
+    val borrowed = kotlinx.coroutines.flow.MutableStateFlow(false)
+
     /** Called by the live view instead of `session.attachSurface`. */
     fun attachLocal(session: PocketCameraSession, surface: Surface?) {
         this.session = session
@@ -211,6 +214,7 @@ class StoryboardSurfaceService : Service() {
         StoryboardSurfaceHub.arbiter.setExternal(surface)
         old?.release()
         if (old == null) main.post { StoryboardSurfaceHub.onBorrowChanged?.invoke(true) }
+        StoryboardSurfaceHub.borrowed.value = true
         Log.i(TAG, "m2 borrowed the live picture")
         return status()
     }
@@ -223,6 +227,7 @@ class StoryboardSurfaceService : Service() {
         token = null
         // Synchronous: M2 calls DETACH from surfaceDestroyed and waits for this to return.
         StoryboardSurfaceHub.arbiter.setExternal(null)
+        StoryboardSurfaceHub.borrowed.value = false
         main.post {
             surface.release()
             StoryboardSurfaceHub.gimbal?.release()

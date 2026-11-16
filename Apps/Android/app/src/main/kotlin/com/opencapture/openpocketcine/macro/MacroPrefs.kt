@@ -11,6 +11,7 @@ object MacroPrefs {
     private const val FLOATING_ENABLED = "floatingEnabled"
     private const val BUTTON_X = "buttonX"
     private const val BUTTON_Y = "buttonY"
+    private const val COLLAPSED = "collapsed"
 
     private fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -34,6 +35,13 @@ object MacroPrefs {
 
     fun setButtonPosition(context: Context, x: Int, y: Int) {
         prefs(context).edit { putInt(BUTTON_X, x).putInt(BUTTON_Y, y) }
+    }
+
+    /** The operator put the button away as an edge tab (stays so until tapped open). */
+    fun collapsed(context: Context): Boolean = prefs(context).getBoolean(COLLAPSED, false)
+
+    fun setCollapsed(context: Context, collapsed: Boolean) {
+        prefs(context).edit { putBoolean(COLLAPSED, collapsed) }
     }
 
     private fun choiceKey(preset: String, function: MacroFunction) = "choice.$preset.${function.name}"

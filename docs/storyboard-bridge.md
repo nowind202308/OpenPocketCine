@@ -16,6 +16,12 @@ Red `■ 停`: recording, tap stops. It calls the same `pressShutter` as the rec
 camera's reported state, not the tap, decides what M2 is told. Long-press shows the
 installed build (`versionName`; CI debug builds end in `.r<Actions run number>`).
 
+The floating button can fold to a thin tab on its edge (the record key hides with it): long-press
+to lift it, then let go with its centre past the screen edge. A tap on the tab opens it; the choice
+is remembered. While M2 holds the live picture (its operate screen is in front, see
+`StoryboardSurfaceHub.borrowed`) the button folds by itself and opens again when M2 lets go; a tap
+on the tab opens it for that while. The foreground service keeps running either way.
+
 ## Wire contract v1
 
 Payloads are a JSON object string in the `payload` extra. Fields may be added without a
