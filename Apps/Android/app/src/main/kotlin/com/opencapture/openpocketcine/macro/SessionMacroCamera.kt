@@ -31,6 +31,8 @@ class SessionMacroCamera(private val model: AppModel, scope: CoroutineScope) : M
                     .filter { it.resolution.rawValue == s.resolutionCode }
                     .map { it.frameRate.rawValue },
                 availableIsoIndices = s.availableIsoIndices,
+                shootingMode = s.shootingMode.toString(),
+                resolutionCode = s.resolutionCode.toString(),
             )
         }.stateIn(scope, SharingStarted.Eagerly, MacroCameraState())
 

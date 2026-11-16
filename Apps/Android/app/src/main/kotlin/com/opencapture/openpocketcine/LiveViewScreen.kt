@@ -50,7 +50,10 @@ internal fun monitorLiveFeedSource(sessionOwner: () -> PocketCameraSession): Mon
         override val isFeedRecovering get() = session.isFeedRecovering
         override val isFocusResetAvailable get() = session.isFocusResetAvailable
         override val wantsFaceDetect get() = session.wantsFaceDetect
-        override fun attachSurface(surface: Surface?) = session.attachSurface(surface)
+        // Fork: through the arbiter, so the storyboard companion can borrow the picture while
+        // this view is gone (bridge/StoryboardSurfaceService).
+        override fun attachSurface(surface: Surface?) =
+            com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.attachLocal(session, surface)
         override fun noteLiveFrame() = session.noteLiveFrame()
         override fun retrySessionRecovery() = session.retrySessionRecovery()
         override fun wantsFaceFrame() = session.wantsFaceFrame()

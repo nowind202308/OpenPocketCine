@@ -85,11 +85,15 @@ class FloatingMacroService : Service() {
                 onRun = { attachment.run(it) },
                 onOpenSettings = ::openSettings,
                 zoom = attachment.zoom,
+                onRecord = attachment.record,
                 choices = attachment.choices,
                 onChoose = { preset, function, value -> attachment.choose(preset, function, value) },
             )
             view.show()
             overlay = view
+            val borrowWatch = scope.launch {
+                com.opencapture.openpocketcine.bridge.StoryboardSurfaceHub.borrowed.collect { view.setAutoCollapsed(it) }
+            }
             scope.launch { MacroHub.results.collect { onResult(it) } }.also { results ->
                 try {
                     val armed = attachment.zoom?.armed ?: noArm
@@ -99,6 +103,7 @@ class FloatingMacroService : Service() {
                     }.collect { f -> view.render(f.tone, f.camera, f.running, lastNote, f.armed) }
                 } finally {
                     results.cancel()
+                    borrowWatch.cancel()
                 }
             }
         }

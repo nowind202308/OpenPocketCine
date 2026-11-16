@@ -67,6 +67,20 @@ class FloatingMacroLogicTest {
     }
 
     @Test
+    fun buttonPutAwayPastAnEdgeAndFoldsWhileM2ShowsThePicture() {
+        // 160 px button on a 1080 px screen: put away once its centre leaves the screen.
+        assertFalse(FloatingMacroLogic.draggedOffEdge(-70, 160, 1080))
+        assertTrue(FloatingMacroLogic.draggedOffEdge(-90, 160, 1080))
+        assertFalse(FloatingMacroLogic.draggedOffEdge(990, 160, 1080))
+        assertTrue(FloatingMacroLogic.draggedOffEdge(1010, 160, 1080))
+        assertTrue(FloatingMacroLogic.collapsed(manual = true, auto = false, openedDuringAuto = false))
+        assertTrue(FloatingMacroLogic.collapsed(manual = false, auto = true, openedDuringAuto = false))
+        // Opened from the tab while M2 is in front: stays open until M2 lets go.
+        assertFalse(FloatingMacroLogic.collapsed(manual = false, auto = true, openedDuringAuto = true))
+        assertFalse(FloatingMacroLogic.collapsed(manual = false, auto = false, openedDuringAuto = false))
+    }
+
+    @Test
     fun serviceStartsOnlyLiveButSurvivesADroppedLink() {
         assertTrue(FloatingMacroLogic.shouldStart(enabled = true, overlayGranted = true, attached = true, live = true))
         assertFalse(FloatingMacroLogic.shouldStart(enabled = true, overlayGranted = true, attached = true, live = false))
