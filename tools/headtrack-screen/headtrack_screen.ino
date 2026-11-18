@@ -18,8 +18,9 @@
  *   GFX Library for Arduino（moononournation，1.6 以上）
  *
  * 畫面：
- *   外圈刻度每 30°，紅色刻度是正前方；青色指針 = 水平角（向右為正）
+ *   外圈刻度每 30°，紅色刻度是正前方；外圈青色三角 = 水平角（向右為正）
  *   左側直條 = 俯仰角（±45° 滿格，抬頭往上）
+ *   USB-C 朝下時畫面是正的
  *   上方：SCAN（黃，找頭追器中）／LINK nnHz（綠）／PAUSE（黃，頭追器暫停）／STALE（紅，連著但超過 0.5 秒沒收到封包）
  *   下方：M 模式、S 速度、R 回正次數
  * 序列埠（115200）每秒印一行：水平、俯仰、封包頻率
@@ -131,7 +132,8 @@ static bool connectTarget() {
     client->disconnect();
     return false;
   }
-  Serial.println("已連上頭追器並訂閱");
+  NimBLEConnInfo ci = client->getConnInfo();
+  Serial.printf("已連上頭追器並訂閱，連線間隔 %.2f ms，MTU %u\n", ci.getConnInterval() * 1.25f, ci.getMTU());
   linked = true;
   return true;
 }
@@ -173,15 +175,15 @@ static void drawFrame(const Pose &p, bool isLinked, float hz) {
   if (isLinked && p.count > 0) {
     float yawWrapped = fmodf(p.yaw, 360.0f);
     int tx, ty, lx, ly, rx, ry;
-    polar(yawWrapped, 104, tx, ty);
-    polar(yawWrapped - 6, 66, lx, ly);
-    polar(yawWrapped + 6, 66, rx, ry);
+    polar(yawWrapped, 97, tx, ty);          // 外圈指標：尖端朝內，避開中間文字
+    polar(yawWrapped - 5, 119, lx, ly);
+    polar(yawWrapped + 5, 119, rx, ry);
     uint16_t c = stale ? RGB565_RED : (enabled ? RGB565_CYAN : RGB565_YELLOW);
     gfx->fillTriangle(tx, ty, lx, ly, rx, ry, c);
   }
 
   // 左側俯仰條
-  const int bx = 34, top = 72, bot = 168, mid = (top + bot) / 2;
+  const int bx = 44, top = 72, bot = 168, mid = (top + bot) / 2;
   gfx->drawRect(bx - 5, top, 10, bot - top, RGB565_DARKGREY);
   gfx->drawFastHLine(bx - 9, mid, 18, RGB565_DARKGREY);
   if (isLinked && p.count > 0) {
@@ -194,14 +196,14 @@ static void drawFrame(const Pose &p, bool isLinked, float hz) {
   // 上方狀態
   char buf[24];
   if (!isLinked) {
-    drawCentered(haveTarget ? "CONNECT" : "SCAN", 34, 2, RGB565_YELLOW);
+    drawCentered(haveTarget ? "CONNECT" : "SCAN", 44, 2, RGB565_YELLOW);
   } else if (stale) {
-    drawCentered("STALE", 34, 2, RGB565_RED);
+    drawCentered("STALE", 44, 2, RGB565_RED);
   } else if (!enabled) {
-    drawCentered("PAUSE", 34, 2, RGB565_YELLOW);
+    drawCentered("PAUSE", 44, 2, RGB565_YELLOW);
   } else {
     snprintf(buf, sizeof(buf), "LINK %.0fHz", hz);
-    drawCentered(buf, 34, 2, RGB565_GREEN);
+    drawCentered(buf, 44, 2, RGB565_GREEN);
   }
 
   // 中央數值
