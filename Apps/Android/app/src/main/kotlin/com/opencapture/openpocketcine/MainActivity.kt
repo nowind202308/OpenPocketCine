@@ -101,6 +101,7 @@ open class MainActivity : ComponentActivity() {
     private lateinit var macroAttachment: MacroAttachment
     /** Bluetooth control probe for the settings page: can a BLE-only controller change settings? */
     private lateinit var bleProbe: SessionBleProbe
+    private lateinit var headTrack: com.opencapture.openpocketcine.headtrack.HeadTrackController
     /** Continuous zoom from the floating menu's 縮放 ring. */
     private lateinit var macroZoom: ZoomDriver
     /** The overlay-permission hint shows once per activity, not on every reconnect. */
@@ -115,6 +116,8 @@ open class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen().setKeepOnScreenCondition { !launch.firstFrameDrawn }
         super.onCreate(savedInstanceState)
+        // Fork: this app's own copy joins the shared operator-copy catalog (res/raw-zh-rTW).
+        com.opencapture.monitorui.l10n.UiCatalog.register(R.raw.openpocketcine_ui_catalog)
         // One model per task: a recreated activity keeps the session; finishing closes it.
         model = retainedMonitorRoot { createModel().also(AppModel::prepareStartup) }
         model.gimbalGamepad.ensureListening(this, model)
@@ -160,6 +163,9 @@ open class MainActivity : ComponentActivity() {
         MacroHub.attach(macroAttachment)
         bleProbe = SessionBleProbe(model, macroScope) { macroRunner.isRunning }
         MacroHub.bleProbe = bleProbe
+        // Fork (feat/headtrack-f2): DIY head tracker over Bluetooth drives the gimbal by angle.
+        headTrack = com.opencapture.openpocketcine.headtrack.HeadTrackController(this, model, macroScope)
+        headTrack.start()
         FloatingMacroService.dismissed = false
         macroScope.launch { model.session.phaseFlow.collect { updateFloatingMacro() } }
         publishMacroShortcut()
@@ -276,6 +282,7 @@ open class MainActivity : ComponentActivity() {
         if (::macroZoom.isInitialized) macroZoom.stop()
         if (::macroAttachment.isInitialized) MacroHub.detach(macroAttachment)
         if (::bleProbe.isInitialized && MacroHub.bleProbe === bleProbe) MacroHub.bleProbe = null
+        if (::headTrack.isInitialized) headTrack.close()
         macroScope.cancel()
         super.onDestroy()
     }

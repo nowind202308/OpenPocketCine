@@ -1,0 +1,56 @@
+# zh-TW catalog for this app's own copy. Shared copy: OpenCine monitor-ui opencine_ui_catalog.tsv.
+ · unverified	 · 未驗證
+Needs approval on the camera	需要在相機上確認
+FOCUS {}	對焦 {}
+Setting not available	無法使用這個設定
+Turn the camera on and keep the phone nearby. Pocket and Nano both appear. Choose the one you want.	請開啟相機，並讓手機保持在附近。Pocket 和 Nano 都會出現，選擇你要的那一台。
+If the camera shows Approve, tap it on that camera's screen. First-time pairing can wait up to 90 seconds.	相機顯示確認提示時，請在相機螢幕上點選。第一次配對最多可能要等 90 秒。
+We read the camera's network over Bluetooth, then join its Wi-Fi for you.	App 會透過藍牙讀取相機的網路資訊，再幫你加入相機的 Wi-Fi。
+Exposure, LUTs and scopes go live as soon as the video link is up.	影像連線建立後，曝光、LUT 與示波器就會開始運作。
+Look for an Approve / pairing prompt	留意相機上的確認／配對提示
+Tap it on the camera screen	在相機螢幕上點選
+Leave the camera on. It brings up its own Wi-Fi	請保持相機開機，它會開啟自己的 Wi-Fi
+On 5.8 GHz that can take about a minute; we keep trying	5.8 GHz 時可能要約一分鐘，App 會持續嘗試
+Allow {}	允許 {}
+Turn Bluetooth on	開啟藍牙
+Camera control speaks DUML over Bluetooth and the camera's Wi-Fi. No DJI SDK is bundled or required.	相機控制透過藍牙與相機 Wi-Fi 使用 DUML 協定，不包含也不需要 DJI SDK。
+How you can use OpenPocketCine.	OpenPocketCine 的使用條款。
+Imported looks land here. Auto stays on Built-in or DJI.	匯入的風格會出現在這裡。自動模式只使用內建或 DJI 風格。
+No matching look for this color / camera	沒有符合這個色彩模式／相機的風格
+Official DJI Rec.709 cube	DJI 官方 Rec.709 LUT
+Official DJI looks for this color / camera	符合這個色彩模式／相機的 DJI 官方風格
+Reconnect this camera before changing settings.	變更設定前請先重新連線這台相機。
+Camera settings are available when its connection is ready.	連線就緒後才能使用相機設定。
+{} preview	{} 預覽
+Returning cameras to their Wi-Fi…	正在讓相機回到自己的 Wi-Fi…
+Try experimental shared Wi-Fi · Preview unavailable	試用實驗性共用 Wi-Fi · 無法預覽
+Each camera will join {}. Approve on the camera if asked.	每台相機都會加入 {}。相機詢問時請確認。
+Close anyway	仍要關閉
+Could not connect. Try again.	無法連線，請再試一次。
+Wi-Fi join verified · Preview not supported yet	已確認加入 Wi-Fi · 尚不支援預覽
+Waiting for video	正在等待影像
+Shared network unavailable. Rejoin it, then reconnect this camera.	無法使用共用網路。請重新加入後再重新連線這台相機。
+Some cameras could not return to their own Wi-Fi. Keep them powered on and close Multiview again to retry.	部分相機無法回到自己的 Wi-Fi。請保持開機，再關閉一次多機預覽以重試。
+Live · Video mode	即時 · 錄影模式
+Auto LUT	自動 LUT
+Camera Wi-Fi could not be restored. Keep it powered on and close Multiview to retry.	無法恢復相機 Wi-Fi。請保持開機，並關閉多機預覽以重試。
+Multiview preview is not available for this camera model yet.	這個相機型號尚不支援多機預覽。
+Connecting · approve on camera	連線中 · 請在相機上確認
+Bluetooth pairing	藍牙配對
+The Nano did not confirm its Wi-Fi wake. Keep it powered on and try again.	Nano 沒有確認 Wi-Fi 喚醒。請保持開機後再試一次。
+Could not connect	無法連線
+Could not connect preview	無法連接預覽
+Could not restore preview. Tap Reconnect to try again.	無法恢復預覽，請點「重新連線」再試一次。
+Finding camera on Wi-Fi · {} of 2	正在 Wi-Fi 上尋找相機 · 第 {} 次，共 2 次
+Could not find this camera on the shared Wi-Fi. Check that both devices use the same network and that client isolation is off, then tap Reconnect.	在共用 Wi-Fi 上找不到這台相機。請確認兩台裝置在同一個網路，且已關閉用戶端隔離，再點「重新連線」。
+Connecting normal preview	正在連接一般預覽
+Try experimental shared Wi-Fi	試用實驗性共用 Wi-Fi
+Remove this tile to enable Record all for your other cameras.	移除這個畫格，才能讓其他相機使用「全部錄影」。
+Open Live View	開啟即時預覽
+Disable Auto LUT	關閉自動 LUT
+Enable Auto LUT	開啟自動 LUT
+Connection needs attention	連線需要處理
+Restoring picture…	正在恢復畫面…
+Waiting for picture…	正在等待畫面…
+Before pairing, turn off DJI Frame Tap and force quit DJI Mimo.	配對前請關閉 DJI Frame Tap，並強制關閉 DJI Mimo。
+{} Make sure the camera is on and activated, then move closer.	{} 請確認相機已開機並啟用，然後靠近一點。

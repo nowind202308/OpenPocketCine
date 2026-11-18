@@ -1,8 +1,8 @@
 package com.opencapture.openpocketcine
 
+import com.opencapture.monitorui.l10n.Text
 import com.opencapture.opencine.cameracontrols.*
 
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue

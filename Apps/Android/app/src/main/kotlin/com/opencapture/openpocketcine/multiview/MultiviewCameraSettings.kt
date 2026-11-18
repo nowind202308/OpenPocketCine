@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -52,6 +51,7 @@ import com.opencapture.monitorui.MonitorDrawerTabs
 import com.opencapture.monitorui.MonitorImagePreview
 import com.opencapture.monitorui.MonitorInspector
 import com.opencapture.monitorui.MultiviewSafeArea
+import com.opencapture.monitorui.l10n.Text
 import com.opencapture.monitorui.monitorScrollFade
 import com.opencapture.opencine.cameracontrols.CaptureLists
 import com.opencapture.opencine.cameracontrols.LiveControlSheet
